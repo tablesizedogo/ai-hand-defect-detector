@@ -18,14 +18,14 @@ Python environments:
 | step | script | status |
 |---|---|---|
 | 1. crops + manifest | `autolabel/01_crop_all.py` | **done**: 5,604 crops in `autolabel_data/crops/` (square, 30% padding, max side 448). Metadata in `autolabel_data/manifest.jsonl` |
-| 2. cheap scores + embeddings | `autolabel/02_cheap_scores.py` | CLIP-B/32 zero-shot (`clip_b32_zs.jsonl`) + `emb_clip_b32.npy` **done**. `emb_dinov2_base.npy`, then `emb_clip_l14.npy`, **running** (log `autolabel_data/cheap_scores2.log`). The detector confidence is already in the manifest (`det_conf`) |
-| 3. Gemma-4-E4B Yes/No/None | `autolabel/03_vlm_score.py` via `autolabel/run_vlm.sh` | **running, detached**. It was paused (SIGSTOP) while step 2 used all 8 cores. A detached watcher resumes it (SIGCONT) when step 2 exits. ~5 s/crop alone → **ETA ≈ 7.5–8 h after resume** (resume expected ≈ 15:10 MSK when CLIP-L finishes → done ≈ 23:00 MSK 2026-10-20). Worker PID 331828, loop PID 331825 |
+| 2. cheap scores + embeddings | `autolabel/02_cheap_scores.py` | **done**: `clip_b32_zs.jsonl`, `emb_clip_b32.npy` (N×512), `emb_dinov2_base.npy` (N×768), `emb_clip_l14.npy` (N×768), row order in `keys.json`. The detector confidence is in the manifest (`det_conf`) |
+| 3. Gemma-4-E4B Yes/No/None | `autolabel/03_vlm_score.py` via `autolabel/run_vlm.sh` | **running, detached** since 15:15 MSK with 6 threads (8 threads was not faster). Loop PID 346615, worker PID 346618 (PIDs change after a restart; see `vlm_job.pid` / `pgrep`). ~5.2 s/crop → **ETA ≈ 23:15 MSK 2026-10-20** |
 | 4. fusion + hand gate | `autolabel/04_fuse.py` | ready, tested (dry run) |
 | 5. silver labels + student + ONNX | `autolabel/05_silver_train.py` | ready, tested (dry run, CLIP-B/32: logreg + MLP, ONNX parity 2e-7) |
 | 6. gold-check set + contact sheets | `autolabel/06_goldset.py` | ready, tested (dry run) |
 | 7. ingest answers → calibration + eval | `autolabel/07_ingest_eval.py` | ready, tested with fake answers |
 
-Why the pause: running torch embeddings next to llama.cpp made Gemma go from 5 s to 25–40 s per crop because of CPU oversubscription. **Never run heavy CPU jobs while step 3 runs.** If you must, pause the worker first: `kill -STOP <worker pid>`, and later `kill -CONT <worker pid>`.
+Why there was a pause at the start: running torch embeddings next to llama.cpp made Gemma go from 5 s to 25–40 s per crop because of CPU oversubscription. **Never run heavy CPU jobs while step 3 runs.** If you must, pause the worker first: `kill -STOP <worker pid>`, and later `kill -CONT <worker pid>`.
 
 ## Check the VLM job
 
@@ -55,7 +55,7 @@ setsid nohup autolabel/run_vlm.sh >/dev/null 2>&1 < /dev/null &
 kill $(cat autolabel_data/vlm_job.pid); pkill -f 03_vlm_score.py
 ```
 
-The worker uses 6 threads (it was started with `VLM_THREADS=6`). After step 2 finishes, you can restart it with all 8 threads for ~15–20% more speed. Nothing is lost, only the current crop is recomputed:
+The worker runs with `VLM_THREADS=6`. 8 threads measured no faster: 4.7–5.9 vs ~5.0 s/crop. To change threads, restart it. Nothing is lost, only the current crop is recomputed:
 
 ```bash
 kill $(cat autolabel_data/vlm_job.pid); pkill -f 03_vlm_score.py; sleep 3
