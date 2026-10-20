@@ -1,0 +1,146 @@
+{
+ "ok_bad": [
+  {
+   "title": "hand_ok - plausible anatomy (style, gloves, simplification are fine)",
+   "color": [
+    34,
+    197,
+    94
+   ],
+   "items": [
+    {
+     "id": 145812213,
+     "box": 0,
+     "note": "ok: grip on bottle"
+    },
+    {
+     "id": 121861507,
+     "box": 0,
+     "note": "ok: anime, ring"
+    },
+    {
+     "id": 138659619,
+     "box": 0,
+     "note": "ok: painted"
+    },
+    {
+     "id": 121242766,
+     "box": 0,
+     "note": "ok: holding glass"
+    },
+    {
+     "id": 143121453,
+     "box": 0,
+     "note": "ok: cup, photo"
+    },
+    {
+     "id": 141856288,
+     "box": 1,
+     "note": "ok: cup, photo"
+    },
+    {
+     "id": 146122858,
+     "box": 0,
+     "note": "ok: relaxed hand"
+    },
+    {
+     "id": 9691919,
+     "box": 0,
+     "note": "ok: drawing pencil"
+    }
+   ]
+  },
+  {
+   "title": "hand_bad - anatomical defect",
+   "color": [
+    239,
+    68,
+    68
+   ],
+   "items": [
+    {
+     "id": 135336233,
+     "box": 0,
+     "note": "bad: tangled extra fingers"
+    },
+    {
+     "id": 138168000,
+     "box": 0,
+     "note": "bad: finger tangle"
+    },
+    {
+     "id": 79324142,
+     "box": 0,
+     "note": "bad: too many fingers"
+    },
+    {
+     "id": 121752622,
+     "box": 1,
+     "note": "bad: extra/bent fingers"
+    },
+    {
+     "id": 143988471,
+     "box": 1,
+     "note": "bad: ghost extra fingers"
+    },
+    {
+     "id": 71582450,
+     "box": 1,
+     "note": "bad: fused sausage fingers"
+    },
+    {
+     "id": 145948791,
+     "box": 0,
+     "note": "bad: mangled mitten blob"
+    },
+    {
+     "id": 145901757,
+     "box": 0,
+     "note": "bad: mangled blob"
+    }
+   ]
+  }
+ ],
+ "edge": [
+  {
+   "title": "Edge cases (see guide): keep box = hand-shaped hands; delete = not a hand",
+   "color": [
+    250,
+    204,
+    21
+   ],
+   "items": [
+    {
+     "id": 145338005,
+     "box": 0,
+     "note": "keep: gloved hand"
+    },
+    {
+     "id": 145978598,
+     "box": 1,
+     "note": "keep: robot hand"
+    },
+    {
+     "id": 116104541,
+     "box": 0,
+     "note": "keep: gloved, simplified"
+    },
+    {
+     "id": 139246672,
+     "box": 0,
+     "note": "delete: animal paw"
+    },
+    {
+     "id": 119437161,
+     "box": 2,
+     "note": "delete: flowers (false box)"
+    },
+    {
+     "id": 52556595,
+     "box": 1,
+     "note": "delete: vase (false box)"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,24 @@
+.venv/
+.lsvenv/
+weights/
+dist/
+qa/tmp/
+__pycache__/
+*.pyc
+# no images in git
+*.webp
+*.png
+*.jpeg
+images/
+# large/derived data
+data/det_v8s.jsonl
+data/candidates*.jsonl
+data/preannotations_v0.jsonl
+data/*.log
+data/row_ids.npy
+pip*.log
+# allow small docs/QA jpg grids only
+*.jpg
+!docs/*.jpg
+!qa/qa_overview.jpg
+data/selected_v0.jsonl

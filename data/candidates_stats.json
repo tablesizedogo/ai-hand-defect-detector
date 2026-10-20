@@ -1,0 +1,30 @@
+{
+ "queries": 60,
+ "topk_per_query": 900,
+ "union": 20684,
+ "dropped": {
+  "clip_suggestive": 3992,
+  "clip_strict_sfw": 1430,
+  "extra_prompt_block": 931,
+  "clean_flag_junk": 78,
+  "clean_flag_dup": 438,
+  "blocklist_en_ru": 6
+ },
+ "kept": 13809,
+ "by_family": {
+  "flux": 1524,
+  "illustrious": 5884,
+  "extras": 1165,
+  "krea2": 5236
+ },
+ "by_style": {
+  "anime": 7153,
+  "photo": 3389,
+  "art": 3267
+ },
+ "corpus_style": {
+  "art": 41519,
+  "photo": 27424,
+  "anime": 31224
+ }
+}

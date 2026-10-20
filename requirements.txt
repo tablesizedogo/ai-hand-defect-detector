@@ -1,0 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+ultralytics
+transformers
+open_clip_torch
+mediapipe
+huggingface_hub
+numpy
+pillow

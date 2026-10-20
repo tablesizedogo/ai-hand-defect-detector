@@ -1,0 +1,47 @@
+{
+ "images": {
+  "krea2": 1084,
+  "photo": 820,
+  "all": 2500,
+  "anime": 937,
+  "art": 743,
+  "illustrious": 726,
+  "flux": 398,
+  "extras": 292
+ },
+ "boxes": {
+  "krea2": 2628,
+  "photo": 1679,
+  "all": 5604,
+  "anime": 1997,
+  "art": 1928,
+  "illustrious": 1478,
+  "flux": 884,
+  "extras": 614
+ },
+ "boxes_per_image_hist": {
+  "1": 663,
+  "2": 1122,
+  "3": 414,
+  "4": 174,
+  "5": 65,
+  "6": 62
+ },
+ "box_source_after_nms": {
+  "v9c": 3508,
+  "v8s": 2096
+ },
+ "box_longest_side_px_deciles": [
+  45,
+  55,
+  64,
+  74,
+  84,
+  95,
+  111,
+  132,
+  179
+ ],
+ "boxes_lt_24px": 29,
+ "boxes_score_lt_0.35": 834
+}

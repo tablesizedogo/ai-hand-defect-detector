@@ -1,0 +1,88 @@
+{
+ "criteria": {
+  "max_clip_risk": 0.022,
+  "manual_excluded": 39,
+  "min_conf": 0.35,
+  "min_hand_side_px": 40,
+  "max_boxes": 6,
+  "max_per_author": 3,
+  "near_dup_cos": 0.92,
+  "quota": {
+   "krea2": 700,
+   "illustrious": 700,
+   "flux": 600,
+   "extras": 500
+  }
+ },
+ "candidates": 13809,
+ "screen_drop": {
+  "no_clear_hand": 5631,
+  "too_many_hands": 37
+ },
+ "pool": 8141,
+ "select_drop (unique images skipped while filling quotas)": {
+  "clip_risk": 1381,
+  "manual_sfw_review": 39,
+  "author_cap": 1837,
+  "near_dup": 39
+ },
+ "top_up": {
+  "krea2/anime": 79,
+  "krea2/art": 106,
+  "krea2/photo": 199,
+  "illustrious/anime": 26
+ },
+ "selected": 2500,
+ "authors": 1494,
+ "by_family": {
+  "krea2": 1084,
+  "illustrious": 726,
+  "flux": 398,
+  "extras": 292
+ },
+ "by_style": {
+  "photo": 820,
+  "anime": 937,
+  "art": 743
+ },
+ "by_family_style": {
+  "extras/anime": 146,
+  "extras/art": 68,
+  "extras/photo": 78,
+  "flux/anime": 46,
+  "flux/art": 141,
+  "flux/photo": 211,
+  "illustrious/anime": 433,
+  "illustrious/art": 195,
+  "illustrious/photo": 98,
+  "krea2/anime": 312,
+  "krea2/art": 339,
+  "krea2/photo": 433
+ },
+ "by_baseModel": {
+  "Illustrious": 726,
+  "Krea 2 Turbo": 718,
+  "Krea 2": 366,
+  "Anima": 123,
+  "Flux.1 D": 105,
+  "Flux.2 Klein 9B": 59,
+  "Flux.1 Krea": 55,
+  "Flux.2 D": 48,
+  "ZImageTurbo": 46,
+  "Flux.1 Kontext": 38,
+  "Flux.1 S": 33,
+  "ZImageBase": 26,
+  "SDXL 1.0": 25,
+  "Flux.2 Klein 9B-base": 24,
+  "Pony": 22,
+  "MOSS Image": 19,
+  "Flux.2 Klein 4B": 18,
+  "SDXL Hyper": 11,
+  "Pony V7": 10,
+  "SDXL Lightning": 10,
+  "Flux.2 Klein 4B-base": 9,
+  "Flux.3 Klein": 5,
+  "Flux.3": 3,
+  "Flux.3 Klein-base": 1
+ }
+}
