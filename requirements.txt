@@ -8,3 +8,8 @@ mediapipe
 huggingface_hub
 numpy
 pillow
+scikit-learn
+scipy
+skl2onnx
+onnx
+onnxruntime

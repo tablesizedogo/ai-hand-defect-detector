@@ -22,3 +22,10 @@ pip*.log
 !docs/*.jpg
 !qa/qa_overview.jpg
 data/selected_v0.jsonl
+# auto-labeling: derived data (crops, embeddings, VLM outputs) stays local
+autolabel_data/
+auto/crops/
+auto/sheets/
+auto/*.npy
+auto/*.log
+models/*_dry.onnx

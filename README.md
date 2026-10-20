@@ -103,3 +103,8 @@ package links every image to its Civitai page. Labels will be published without 
 ## Results
 
 *To be filled after stage 2.*
+
+## Stage 1b: automatic labeling (no manual box labeling)
+
+Manual labeling of 5,604 boxes was replaced by an automatic teacher → student pipeline. A local VLM (Gemma-4-E4B, CPU) gives a Yes/No/None judgment per crop. It is fused with the detector confidence and CLIP zero-shot, and the confident tails become silver labels for a linear probe on CLIP-L / DINOv2 embeddings (exported to ONNX). The user checks only ~150 stratified crops, which are used for calibration and an honest metric.
+See [`AUTO_LABEL_FEASIBILITY.md`](AUTO_LABEL_FEASIBILITY.md) (method comparison on 40 hand-judged crops) and [`AUTO_LABEL_RUN.md`](AUTO_LABEL_RUN.md) (how to run/resume).
