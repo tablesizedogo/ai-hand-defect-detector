@@ -101,7 +101,7 @@ Their replacements (`145950231_2`, `128680921_1`) were checked too. Everything e
 When the VLM job prints `ALL DONE`, re-run fusion and training on the full file:
 
 ```bash
-../.venv/bin/python 04_fuse.py            # full vlm_gemma4e4b.jsonl, no snapshot
+../.venv/bin/python 04_fuse.py            # full vlm_gemma4e4b.jsonl, no snapshot (gate default --hand-thr 0.95)
 ../.venv/bin/python 05_silver_train.py --emb clip_l14 --model logreg
 ../.venv/bin/python 05_silver_train.py --emb dinov2_base --model logreg
 ```
@@ -109,6 +109,77 @@ When the VLM job prints `ALL DONE`, re-run fusion and training on the full file:
 **Do NOT re-run `06_goldset.py` once the sheets have been sent.** It would renumber the set. The existing `gold_check/manifest.json` is kept, and `05` keeps excluding those crops from training.
 
 The gold sampling weights describe the snapshot population (3,519 hands). That is fine because the scored subset is a large, style-balanced sample of the full set. Re-run `07_ingest_eval.py` after retraining to get the gold metrics for the new students.
+
+## Gold check ingested (2026-10-21 ~19:45 MSK)
+
+**VLM job state at that time:** **not finished**, 5,368 of 5,604 lines, ~18 s/crop because the box was busy. So the existing snapshot (4,325 crops) was used. Fusion was **not** re-run on the full file.
+
+**Answers.** `autolabel_data/gold_check/answers.txt` contains the user's answer verbatim:
+- 98 OK, 9 BAD, 34 nohand, 9 skip;
+- that gives 107 gold hands.
+
+The gold set was **not** rebuilt or renumbered.
+
+**Gate fix: `04_fuse.py --hand-thr`, default now 0.95 (was 0.5).**
+- The user marked 34 nohand. The 0.5 gate had let 12 of them through as hands. 9 of those 12 had p_hand between 0.71 and 0.92.
+- Rule `p_hand < 0.95` on the gold set:
+  - nohand recall goes from 0.65 to 0.91, precision from 0.92 to 0.89;
+  - non-hands among passed crops go from 9.9% to 2.8%;
+  - OK hands dropped go from 1 to 3 of 98.
+- On the 4,325-crop snapshot, `is_hand` drops from 3,519 to 3,360. 111 of the 159 removed crops were in the old silver-BAD tail.
+- `teacher_ok` is unchanged, because ranks are computed over all scored crops.
+- The students were retrained:
+  - silver labels: 483 BAD, 1,611 OK;
+  - silver CV AUC: CLIP-L 0.957, DINOv2 0.935.
+- The pre-fix artifacts are kept:
+  - `autolabel_data/v1_gate050/` (fused + students);
+  - `models/v1_gate050/` (ONNX).
+- `07` evaluates both versions.
+
+Commands:
+
+```bash
+cd autolabel; export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
+nice -n 19 ../.venv/bin/python 04_fuse.py --vlm ../autolabel_data/vlm_gemma4e4b_snapshot_20261021.jsonl --scored-only --hand-thr 0.95
+nice -n 19 ../.venv/bin/python 05_silver_train.py --emb clip_l14    --model logreg --allow-partial
+nice -n 19 ../.venv/bin/python 05_silver_train.py --emb dinov2_base --model logreg --allow-partial
+nice -n 19 ../.venv/bin/python 07_ingest_eval.py      # ~80 s (2000 bootstraps + leave-one-out calibration)
+```
+
+**`07_ingest_eval.py` was rewritten.** It now computes:
+- for every score: AUC, AP(BAD), recall of BAD at 5%/10% FPR, ECE and Brier;
+- label-stratified bootstrap 95% CIs for all of them;
+- leave-one-out Platt and isotonic calibration;
+- a sweep of gate rules;
+- the percentile rank of each BAD crop under each score.
+
+Outputs are `gold_check/eval.md` and `eval.json`, and `models/calibration.json`. That file uses Platt on the CLIP-L student: `a=0.387`, `b=2.310`, `p_ok = sigmoid(a*logit(p)+b)`.
+
+**Results** (point [95% CI]). Full tables are in `gold_check/eval.md` and the README.
+
+| score | AUC (OK vs BAD) |
+|---|---|
+| Gemma | 0.69 [0.49–0.87] |
+| fused teacher | 0.67 [0.46–0.86] |
+| CLIP-L student | 0.66 [0.44–0.85] |
+| DINOv2 student | 0.51 [0.31–0.71] |
+| detector conf alone | 0.71 [0.53–0.87] |
+
+- Recall of BAD at 10% FPR is about 0.34 [0.0–0.7] for the best scores.
+- With 9 BAD, none of the differences is significant.
+- The silver CV AUC of 0.96 was only agreement with the teacher.
+- An exploratory Gemma+detector rank average reached 0.72 (selected on gold, so optimistic). Dropping CLIP zero-shot from the fusion is a candidate change.
+
+**Failure modes:**
+- small crops (crop size alone gives AUC 0.65);
+- subtle defects on grips and fists (#20, #38, #118, #147), which every score misses;
+- stylized, non-human, robotic and occluded hands flagged as BAD.
+
+**Next steps:**
+1. When `ALL DONE`: `04_fuse.py` (full file, default `--hand-thr 0.95`), `05` ×2, `07`. Do not re-run `06`.
+2. Build a stronger teacher: upscale crops from the full-resolution originals, use a larger VLM or several prompts, and consider dropping CLIP zero-shot from the fusion.
+3. Run a second gold round of ~100 crops enriched with the lowest student scores (active learning) to get more than 9 positives.
+4. Optional: add HAD positives.
 
 ## Check the VLM job
 

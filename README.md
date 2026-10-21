@@ -1,6 +1,6 @@
 # Hand-defect detector for AI-generated images
 
-> **Status: stage 1 (data preparation) is complete; manual labeling is in progress.** Metrics below are placeholders until the labels are in.
+> **Status: stage 1 (data) and stage 1b (automatic labeling) are done; the first honest check on a 150-crop user-labeled gold set shows the automatic teacher is still weak (AUC ≈ 0.66–0.69 for the teacher and the CLIP-L student, only 9 broken hands in the set, wide CIs).** See [Gold-check results](#gold-check-results-honest-metrics).
 
 Diffusion models still break hands: extra or fused fingers, broken wrists, mangled blobs. This project builds a detector that
 finds hands in generated images and classifies them as **`hand_ok`** or **`hand_bad`**. It ships as a **ComfyUI custom node** that
@@ -14,7 +14,8 @@ It continues [civitai-multimodal-rag](https://github.com/tablesizedogo/civitai-m
 | stage | what | status |
 |---|---|---|
 | 0. Problem setup | classes `hand_ok` / `hand_bad`, labeling guide, target metrics: mAP50 and **recall on `hand_bad`** (a missed defect costs more than a false alarm in QC) | done |
-| 1. Data | CLIP-guided candidate mining → hand-detector screening → balanced selection of 2,500 images → pre-annotation → manual labeling with a self-agreement check | pre-annotation done, labeling in progress |
+| 1. Data | CLIP-guided candidate mining → hand-detector screening → balanced selection of 2,500 images → pre-annotation | done |
+| 1b. Automatic labeling | VLM teacher + detector + CLIP → silver labels → linear probe on CLIP-L / DINOv2 (ONNX) → 150-crop user gold check | done; gold metrics below, teacher needs improvement |
 | 2. Training (Kaggle T4/P100) | zero-shot baseline (Grounding DINO "deformed hand"); YOLO11 vs RT-DETR; two-stage detector + crop classifier; learning curve at 250/500/1000/all labels; error analysis by base model and style | planned |
 | 3. ComfyUI node | detect → dilated mask → inpaint with the same prompt, up to N retries; evaluate the share of defect-free images before/after on 200 fresh generations | planned |
 | 4. Packaging | ONNX export (no PyTorch in the node), weights and labels on the HF Hub (no images), README with GIF | planned |
@@ -94,6 +95,59 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python scripts/08_guide_examples.py    # guide example sheets
 .venv/bin/python scripts/06_package.py           # dist/hand_defects_labeling.zip
 ```
+
+## Gold-check results (honest metrics)
+
+**Gold set.** 150 crops, stratified by teacher-score decile and style, judged by the user (one pass, one annotator):
+98 OK hands, **9 BAD hands**, 34 "not a hand", 9 "can't judge". OK-vs-BAD metrics use the **107 gold hands** and are re-weighted
+by the sampling weights. 95% CIs come from 2,000 label-stratified bootstrap resamples. **With 9 positives the CIs are very wide:
+one BAD crop moves recall by ~11 points, and no difference between the scores below is statistically significant.**
+The models were trained on silver labels from 4,325 of the 5,604 crops (the VLM job was still running); gold crops are never used for training.
+
+| score (P(ok); BAD = positive class) | AUC | AP (BAD) | recall BAD @ 5% FPR | recall BAD @ 10% FPR |
+|---|---|---|---|---|
+| Gemma-4-E4B alone | 0.69 [0.49–0.87] | 0.22 [0.11–0.53] | 0.23 [0.00–0.60] | 0.34 [0.00–0.70] |
+| fused teacher (Gemma + detector conf + CLIP zero-shot, rank average) | 0.67 [0.46–0.86] | 0.37 [0.11–0.68] | 0.34 [0.00–0.70] | 0.34 [0.10–0.70] |
+| **student: CLIP-L/14 linear probe (ONNX)** | **0.66 [0.44–0.85]** | 0.21 [0.10–0.50] | 0.23 [0.00–0.60] | 0.34 [0.00–0.70] |
+| student: DINOv2-base linear probe (ONNX) | 0.51 [0.31–0.71] | 0.11 [0.07–0.27] | 0.11 [0.00–0.30] | 0.11 [0.00–0.30] |
+| *reference: detector confidence alone* | 0.71 [0.53–0.87] | 0.25 [0.12–0.58] | 0.23 [0.00–0.60] | 0.23 [0.00–0.70] |
+| *reference: random score* | 0.50 | 0.08 | 0.05 | 0.10 |
+
+For comparison, the CLIP-L student agrees with its own silver labels at CV AUC 0.96. That number measures how well it copies
+the teacher, not how well it finds broken hands. On real labels the teacher itself reaches only ≈ 0.67–0.69.
+
+**Calibration.** The raw student probabilities are badly over-confident about BAD (ECE 0.32). Platt scaling on the gold hands,
+evaluated leave-one-out, brings ECE to 0.01 [0.01–0.07] and Brier from 0.23 to 0.078. That is no better than always predicting the
+base rate (Brier 0.077): after honest calibration the model's calibrated P(ok) spans only ≈ 0.74–0.98 (1st–99th percentile over all gated hands). Isotonic regression was worse
+(ECE 0.05) with so few positives. The deployed calibrator is Platt, in `models/calibration.json`.
+
+**"Not a hand" gate.** 34 of 150 gold crops were not hands (feet, armor, hair, animals, objects), versus 25 that the gate had
+sampled as non-hands. Gemma's P(hand) separates them well (AUC 0.98), but the original threshold of 0.5 was too lax.
+
+| gate | precision | recall | non-hands left among hands | OK hands dropped |
+|---|---|---|---|---|
+| P(hand) < 0.5 (before) | 0.92 | 0.65 | 12 (9.9% of passed crops) | 1 of 98 |
+| **P(hand) < 0.95 (now)** | 0.89 | 0.91 | 3 (2.8%) | 3 of 98 |
+
+The threshold was chosen on the same gold set, so the "now" row is somewhat optimistic. The gap is large, though:
+9 of the 12 missed non-hands had P(hand) 0.71–0.92, while 95 of the 97 OK hands that passed the old gate had P(hand) ≥ 0.95. The stricter gate removed 159 crops,
+including about a fifth of the old silver-BAD tail. AUC on hands stayed the same (0.661 → 0.664), so the gate cleans the data but
+does not fix the teacher. Gating on detector confidence did not help.
+
+**Failure modes (from the 9 BAD and the top false alarms):**
+- **Small crops.** Source images are 512 px, and the median BAD crop is 90 px versus 112 px for OK. Crop size alone gives AUC 0.65,
+  so part of the signal is "small and blurry", not anatomy.
+- **Subtle defects on grips.** Wrong finger counts or fused fingers on a fist or grip (#20, #38, #118, #147) are ranked as clean
+  by every score. #147, a photo-style hand holding a bag strap, is in the top 10% "most OK" for Gemma and both students.
+- **Gloves and armor** (#8, #10, #30) get mixed results.
+- **False alarms on stylized hands.** Cartoon four-finger hands, creature, robot and skeletal hands, and heavily occluded hands are
+  flagged as broken. The teacher confuses "unusual" with "malformed".
+- **DINOv2 features carry almost no defect signal here.** CLIP-L is the only usable student backbone.
+
+**Bottom line.** The pipeline is a useful *triage* tool: sort crops, and at a 10% false-alarm rate about a third of broken hands
+are caught. It is not yet an automatic QC gate. Next steps: (1) a stronger or ensembled teacher on upscaled crops, for example a
+larger VLM, several prompts, or crops from full-resolution images; (2) a second gold round enriched with low-score crops (active
+learning), because 9 positives are too few to tune anything; (3) optionally, real hand-artifact examples from HAD (research-only license).
 
 ## Data and licensing
 
