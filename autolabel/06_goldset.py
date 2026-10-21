@@ -13,17 +13,21 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from common import R, D, read_jsonl
 ap = argparse.ArgumentParser(); ap.add_argument('--n-hand', type=int, default=125); ap.add_argument('--n-gate', type=int, default=25)
-ap.add_argument('--per-sheet', type=int, default=25); ap.add_argument('--tile', type=int, default=230)
+ap.add_argument('--per-sheet', type=int, default=25); ap.add_argument('--tile', type=int, default=300)
 ap.add_argument('--score', default=None); ap.add_argument('--allow-partial', action='store_true'); ap.add_argument('--seed', type=int, default=0); ap.add_argument('--out', default='gold_check')
+ap.add_argument('--scored-only', action='store_true', help='sample hands only from crops with a VLM answer (partial run)')
+ap.add_argument('--replace', default='', help='comma-separated keys rejected in the SFW check: each is swapped in place for another crop '
+                'from the same stratum and style (all other items and the numbering stay unchanged)')
 a = ap.parse_args(); rng = random.Random(a.seed)
 fu = read_jsonl(D / 'fused.jsonl'); keys = list(fu)
 if not all(fu[k]['vlm_done'] for k in keys) and not a.allow_partial:
     raise SystemExit('VLM job not finished: rerun 04_fuse.py when done, or pass --allow-partial (gate unknown crops count as hands)')
 excl = set(json.load(open(R / 'auto/gold40.json'))) if (R / 'auto/gold40.json').exists() else set()
+rej = {k for k in a.replace.split(',') if k}; swap_rng = random.Random(1000 + a.seed); swapped = []
 sc = {k: fu[k]['teacher_ok'] for k in keys}; sname = 'teacher_ok'
 if a.score:
     st = read_jsonl(a.score); sc = {k: st[k]['student_p_ok'] for k in keys}; sname = a.score
-hands = [k for k in keys if fu[k]['is_hand'] is not False and k not in excl]
+hands = [k for k in keys if fu[k]['is_hand'] is not False and k not in excl and sc[k] is not None and (fu[k]['vlm_done'] or not a.scored_only)]
 gate = [k for k in keys if fu[k]['is_hand'] is False and k not in excl]
 items = []
 qs = np.quantile([sc[k] for k in hands], np.linspace(0, 1, 11))
@@ -37,14 +41,21 @@ for i in range(10):
     while len(pick) < min(per[i], len(s)):
         for st_ in styles:
             if by[st_] and len(pick) < per[i]: pick.append(by[st_].pop())
-    items += [dict(key=k, stratum=f'decile{i + 1}', weight=len(s) / len(pick)) for k in pick]
+    pool_i = s
+    items += [dict(key=k, stratum=f'decile{i + 1}', weight=len(s) / len(pick), _pool=pool_i) for k in pick]
 if gate and a.n_gate:
-    pick = rng.sample(gate, min(a.n_gate, len(gate))); items += [dict(key=k, stratum='gate_not_hand', weight=len(gate) / len(pick)) for k in pick]
+    pick = rng.sample(gate, min(a.n_gate, len(gate))); items += [dict(key=k, stratum='gate_not_hand', weight=len(gate) / len(pick), _pool=gate) for k in pick]
+used = {it['key'] for it in items}
+for it in items:
+    if it['key'] in rej:
+        cand = sorted(k for k in it['_pool'] if k not in used and k not in rej and fu[k]['style'] == fu[it['key']]['style'])
+        new = swap_rng.choice(cand); swapped.append((it['key'], new)); used.add(new); it['key'] = new
+for it in items: it.pop('_pool')
 rng.shuffle(items)
 for n, it in enumerate(items, 1): it.update(num=n, style=fu[it['key']]['style'], family=fu[it['key']]['family'], sheet=(n - 1) // a.per_sheet + 1)
 out = D / a.out; out.mkdir(exist_ok=True)
 for f in out.glob('sheet_*.jpg'): f.unlink()
-try: font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 22)
+try: font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 40)
 except Exception: font = ImageFont.load_default()
 T = a.tile; C = 5
 for sidx in range(0, len(items), a.per_sheet):
@@ -54,9 +65,11 @@ for sidx in range(0, len(items), a.per_sheet):
         c = Image.open(D / f"crops/{it['key']}.jpg").convert('RGB'); f = (T - 8) / max(c.size)
         c = c.resize((max(1, int(c.width * f)), max(1, int(c.height * f))), Image.LANCZOS)
         x, y = (i % C) * T, (i // C) * T; sh.paste(c, (x + 4 + (T - 8 - c.width) // 2, y + 4 + (T - 8 - c.height) // 2))
-        d.rectangle([x + 4, y + 4, x + 52, y + 32], fill=(0, 0, 0)); d.text((x + 8, y + 6), str(it['num']), fill=(255, 230, 0), font=font)
+        bb = d.textbbox((0, 0), str(it['num']), font=font); bw, bh = bb[2] - bb[0], bb[3] - bb[1]
+        d.rectangle([x + 4, y + 4, x + 4 + bw + 16, y + 4 + bh + 16], fill=(0, 0, 0), outline=(255, 230, 0), width=2)
+        d.text((x + 12 - bb[0], y + 12 - bb[1]), str(it['num']), fill=(255, 230, 0), font=font)
     sh.save(out / f'sheet_{sidx // a.per_sheet + 1:02d}.jpg', quality=88)
-json.dump(dict(score=sname, n=len(items), allow_partial=a.allow_partial, items=items), open(out / 'manifest.json', 'w'), indent=1)
+json.dump(dict(score=sname, n=len(items), allow_partial=a.allow_partial, seed=a.seed, sfw_rejected=sorted(rej), swaps=swapped, items=items), open(out / 'manifest.json', 'w'), indent=1)
 open(out / 'answers_TEMPLATE.txt', 'w').write(
     '# Numbers are global (1..%d). Everything not listed = OK hand.\n# bad   = anatomically broken hand (extra/missing/fused fingers, melted, blob)\n'
     '# nohand = not a human hand (paw, object, face, nothing)\n# skip  = cannot judge (too small/blurry/occluded)\nbad:\nnohand:\nskip:\n' % len(items))

@@ -27,6 +27,89 @@ Python environments:
 
 Why there was a pause at the start: running torch embeddings next to llama.cpp made Gemma go from 5 s to 25–40 s per crop because of CPU oversubscription. **Never run heavy CPU jobs while step 3 runs.** If you must, pause the worker first: `kill -STOP <worker pid>`, and later `kill -CONT <worker pid>`.
 
+## Partial run on a VLM snapshot (2026-10-21 ~17:05 MSK)
+
+The user decided not to wait for the full VLM job. Steps 4–6 were run on the crops that already had a Gemma answer.
+The VLM job was **not** stopped: it keeps appending to `vlm_gemma4e4b.jsonl`.
+
+**Snapshot.** At 17:02 MSK the file was copied to `autolabel_data/vlm_gemma4e4b_snapshot_20261021.jsonl`. All lines were complete. Details:
+- 4,325 of 5,604 crops, 0 errors;
+- sha256 `0d2feae9…edce3ac`, also stored in `fused_meta.json`.
+
+The style mix of the scored crops is close to the full set: anime 1,592 / art 1,466 / photo 1,267, versus 1,997 / 1,928 / 1,679.
+
+**Commands used** (2 BLAS threads + `nice`, so the Gemma worker is not slowed down; peak extra RAM was well under 1 GB):
+
+```bash
+cd /workspace/hand_defects/autolabel
+export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
+nice -n 10 ../.venv/bin/python 04_fuse.py --vlm ../autolabel_data/vlm_gemma4e4b_snapshot_20261021.jsonl --scored-only
+nice -n 10 ../.venv/bin/python 06_goldset.py --allow-partial --scored-only --replace 146110771_1,145814100_1
+nice -n 10 ../.venv/bin/python 05_silver_train.py --emb clip_l14    --model logreg --allow-partial
+nice -n 10 ../.venv/bin/python 05_silver_train.py --emb dinov2_base --model logreg --allow-partial
+```
+
+**Code changes for partial runs:**
+- `04_fuse.py`:
+  - `--vlm <file>` selects the VLM results file.
+  - `--scored-only` rank-normalises all three signals over the VLM-scored crops only. Unscored crops get `teacher_ok=None` and `is_hand=None`.
+  - Writes `fused_meta.json` with the snapshot name, its hash and the counts.
+- `05_silver_train.py`:
+  - Skips crops with no teacher score.
+  - Reports more silver-CV metrics (AP, recall at FPR, Brier, ECE) and stores them in `student_<tag>_meta.json`.
+  - The study-40 sanity check uses only the scored study crops.
+- `06_goldset.py`:
+  - `--scored-only` samples hands only from scored crops.
+  - `--replace k1,k2` swaps rejected crops (SFW check) in place for a crop of the same stratum and style. Numbering and all other items stay the same. The swaps are logged in `manifest.json`.
+  - Bigger tiles (300 px) and 40 px numbers in a boxed label, so each sheet is 1500×1500.
+
+**Counts:**
+- VLM-scored crops: 4,325.
+- `is_hand`: 3,519. Not a hand: 806.
+- Silver pool: 3,367 hands, after excluding the 150 gold crops and the 40 study crops.
+- Silver labels: 505 BAD (teacher ≤ 0.348) and 1,684 OK (teacher ≥ 0.555). The 1,178 crops in between were discarded.
+
+**Gold-check set** (`autolabel_data/gold_check/`):
+- 150 crops in `sheet_01.jpg` … `sheet_06.jpg`, 25 per sheet, numbered 1–150 globally.
+- 125 hands, stratified by teacher decile and style, plus 25 crops the gate called "not a hand".
+- The mapping is `manifest.json`, read by `07_ingest_eval.py`. The answer template is `answers_TEMPLATE.txt`.
+
+**SFW check.** Every sheet was inspected visually. Two crops were replaced:
+- #63, `146110771_1`: anime hands on the chest area;
+- #107, `145814100_1`: hand on a bare thigh.
+
+Their replacements (`145950231_2`, `128680921_1`) were checked too. Everything else is hands with objects, gloves, weapons and instruments, plus a few non-hands (animals, objects, scenery).
+
+`07_ingest_eval.py` was smoke-tested end-to-end on fake answers. Those outputs were deleted.
+
+**Silver metrics.** These are 5-fold CV against the **silver labels**, so they measure agreement with the teacher, **not ground truth**. The honest numbers will come from the user's gold check via `07`. Logreg students:
+
+| backbone | AUC | acc@0.5 | AP (BAD) | recall BAD @5% FPR | @10% FPR | Brier | ECE (raw) | study-40 sanity AUC* |
+|---|---|---|---|---|---|---|---|---|
+| CLIP-L/14 | 0.965 | 0.911 | 0.921 | 0.834 | 0.915 | 0.080 | 0.134 | 0.872 (teacher 0.944) |
+| DINOv2-base | 0.945 | 0.880 | 0.872 | 0.760 | 0.838 | 0.092 | 0.123 | 0.733 (teacher 0.944) |
+
+\* The study-40 sanity AUC uses my own labels on the 28 study hands that have a VLM score. Very small, not honest, for orientation only.
+
+**Notes on these numbers:**
+- Raw probabilities are not calibrated. `class_weight='balanced'` shifts them, hence the ECE above.
+- Calibration (Platt and isotonic) is fitted on the gold answers in `07`, which writes `models/calibration.json`.
+- ONNX files are `models/hand_ok_clip_l14_logreg.onnx` and `models/hand_ok_dinov2_base_logreg.onnx`. ONNX–sklearn parity is ≤ 3e-7.
+
+### Adding the remaining ~1,280 crops later
+
+When the VLM job prints `ALL DONE`, re-run fusion and training on the full file:
+
+```bash
+../.venv/bin/python 04_fuse.py            # full vlm_gemma4e4b.jsonl, no snapshot
+../.venv/bin/python 05_silver_train.py --emb clip_l14 --model logreg
+../.venv/bin/python 05_silver_train.py --emb dinov2_base --model logreg
+```
+
+**Do NOT re-run `06_goldset.py` once the sheets have been sent.** It would renumber the set. The existing `gold_check/manifest.json` is kept, and `05` keeps excluding those crops from training.
+
+The gold sampling weights describe the snapshot population (3,519 hands). That is fine because the scored subset is a large, style-balanced sample of the full set. Re-run `07_ingest_eval.py` after retraining to get the gold metrics for the new students.
+
 ## Check the VLM job
 
 ```bash

@@ -36,14 +36,21 @@ gc = D / 'gold_check/manifest.json'
 if gc.exists(): excl |= {it['key'] for it in json.load(open(gc))['items']}
 if (R / 'auto/gold40.json').exists(): excl |= set(json.load(open(R / 'auto/gold40.json')))
 pool = np.array([(fu[k]['is_hand'] is True or (a.dry_run and fu[k]['is_hand'] is None)) and k not in excl for k in keys])
-t = np.array([fu[k]['teacher_ok'] for k in keys])
+t = np.array([np.nan if fu[k]['teacher_ok'] is None else fu[k]['teacher_ok'] for k in keys], float)
+pool &= ~np.isnan(t)
 lo, hi = np.quantile(t[pool], [a.bad_q, 1 - a.ok_q])
 sel = pool & ((t <= lo) | (t >= hi)); y = (t[sel] >= hi).astype(int)
 print(f'pool {pool.sum()} hands (excluded {len(excl)} eval crops); silver: {int((y == 0).sum())} BAD (<= {lo:.3f}), {int(y.sum())} OK (>= {hi:.3f}), discarded {pool.sum() - sel.sum()}')
 mk = (lambda: LogisticRegression(C=1.0, max_iter=3000, class_weight='balanced')) if a.model == 'logreg' else \
      (lambda: MLPClassifier(hidden_layer_sizes=(256,), alpha=1e-3, early_stopping=True, max_iter=300, random_state=0))
 cv = cross_val_predict(mk(), X[sel], y, cv=StratifiedKFold(5, shuffle=True, random_state=0), method='predict_proba')[:, 1]
-print(f'5-fold CV vs silver labels: AUC={roc_auc_score(y, cv):.3f}  acc@0.5={((cv >= .5) == y).mean():.3f}')
+from sklearn.metrics import average_precision_score, brier_score_loss, roc_curve
+from common import ece
+fpr_, tpr_, _ = roc_curve(1 - y, 1 - cv)  # positive class = silver BAD
+rec_at = {f: float(tpr_[fpr_ <= f].max()) for f in (0.05, 0.10)}
+cvm = dict(cv_auc=float(roc_auc_score(y, cv)), cv_acc=float(((cv >= .5) == y).mean()), cv_ap_bad=float(average_precision_score(1 - y, 1 - cv)),
+           cv_recall_bad_at_fpr5=rec_at[0.05], cv_recall_bad_at_fpr10=rec_at[0.10], cv_brier=float(brier_score_loss(y, cv)), cv_ece=float(ece(y, cv)))
+print('5-fold CV vs SILVER labels (agreement with the teacher, not ground truth): ' + '  '.join(f'{k[3:]}={v:.3f}' for k, v in cvm.items()))
 clf = mk().fit(X[sel], y); p = clf.predict_proba(X)[:, 1]
 tag = f'{a.emb}_{a.model}' + ('_dry' if a.dry_run else '')
 with open(D / f'student_{tag}.jsonl', 'w') as f:
@@ -52,8 +59,8 @@ with open(D / f'student_{tag}.jsonl', 'w') as f:
 g40 = R / 'auto/gold40.json'
 if g40.exists():
     g = json.load(open(g40)); idx = {k: i for i, k in enumerate(keys)}
-    kk = [k for k in g if g[k] != 'nohand' and k in idx]
-    yy = np.array([g[k] == 'ok' for k in kk]); print(f'study-40 sanity AUC (35 hands): student={roc_auc_score(yy, p[[idx[k] for k in kk]]):.3f} '
+    kk = [k for k in g if g[k] != 'nohand' and k in idx and not np.isnan(t[idx[k]])]
+    yy = np.array([g[k] == 'ok' for k in kk]); print(f'study-40 sanity AUC ({len(kk)} hands with a VLM score; my labels, NOT honest): student={roc_auc_score(yy, p[[idx[k] for k in kk]]):.3f} '
           f'teacher={roc_auc_score(yy, t[[idx[k] for k in kk]]):.3f}')
 from skl2onnx import to_onnx
 (R / 'models').mkdir(exist_ok=True); onx = to_onnx(clf, X[:1].astype(np.float32), options={id(clf): {'zipmap': False}})
@@ -62,4 +69,4 @@ import onnxruntime as ort
 s = ort.InferenceSession(str(op)); po = s.run(None, {s.get_inputs()[0].name: X[:64].astype(np.float32)})[1][:, 1]
 print(f'ONNX saved {op.name} ({op.stat().st_size // 1024} KB); max |onnx - sklearn| = {np.abs(po - p[:64]).max():.2e}')
 json.dump(dict(emb=a.emb, model=a.model, bad_q=a.bad_q, ok_q=a.ok_q, thr_bad=float(lo), thr_ok=float(hi), n_bad=int((y == 0).sum()),
-               n_ok=int(y.sum()), cv_auc=float(roc_auc_score(y, cv)), n_vlm_done=int(n_vlm)), open(D / f'student_{tag}_meta.json', 'w'), indent=1)
+               n_ok=int(y.sum()), n_vlm_done=int(n_vlm), **cvm), open(D / f'student_{tag}_meta.json', 'w'), indent=1)

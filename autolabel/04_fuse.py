@@ -8,23 +8,33 @@ is_hand    = Gemma p_hand >= HAND_THR (normalised P(None) < 0.5). In the study: 
              (one mushy hand at 0.95). Without a VLM answer is_hand=None (unknown).
 Output: autolabel_data/fused.jsonl
 """
-import json, sys
+import argparse, hashlib, json, sys
+from pathlib import Path
 import numpy as np
 from common import D, manifest, read_jsonl, rank01
+ap = argparse.ArgumentParser()
+ap.add_argument('--vlm', default=str(D / 'vlm_gemma4e4b.jsonl'), help='VLM results jsonl (use a frozen snapshot for a reproducible partial run)')
+ap.add_argument('--scored-only', action='store_true', help='rank-normalise only over crops that have a VLM answer; '
+                'crops without one get teacher_ok=None (they are left out of silver/gold until the VLM covers them)')
+a = ap.parse_args()
 HAND_THR = 0.5
 M = manifest(); keys = [m['key'] for m in M]
-vlm = read_jsonl(D / 'vlm_gemma4e4b.jsonl'); zs = read_jsonl(D / 'clip_b32_zs.jsonl')
+vlm = read_jsonl(a.vlm); zs = read_jsonl(D / 'clip_b32_zs.jsonl')
 g = np.array([vlm[k]['p_ok'] if k in vlm else np.nan for k in keys])
 c = np.array([zs[k]['p_ok'] if k in zs else np.nan for k in keys])
 d = np.array([m['det_conf'] for m in M], float)
+if a.scored_only:
+    sm = ~np.isnan(g); d = np.where(sm, d, np.nan); c = np.where(sm, c, np.nan)
 ranks = np.vstack([rank01(g), rank01(d), rank01(c)])
-fused = np.nanmean(ranks, 0)
+with np.errstate(all='ignore'): fused = np.nanmean(ranks, 0)
 with open(D / 'fused.jsonl', 'w') as f:
     for i, m in enumerate(M):
         k = m['key']; v = vlm.get(k)
         f.write(json.dumps(dict(key=k, style=m['style'], family=m['family'], det_conf=m['det_conf'],
             clip_p_ok=None if np.isnan(c[i]) else float(c[i]), gemma_p_ok=None if v is None else v['p_ok'],
             gemma_p_hand=None if v is None else v['p_hand'], vlm_done=v is not None,
-            is_hand=None if v is None else bool(v['p_hand'] >= HAND_THR), teacher_ok=float(fused[i]))) + '\n')
+            is_hand=None if v is None else bool(v['p_hand'] >= HAND_THR), teacher_ok=None if np.isnan(fused[i]) else float(fused[i]))) + '\n')
 nv = int((~np.isnan(g)).sum()); nh = sum(1 for k in keys if k in vlm and vlm[k]['p_hand'] >= HAND_THR)
+json.dump(dict(vlm_file=Path(a.vlm).name, vlm_sha256=hashlib.sha256(open(a.vlm, 'rb').read()).hexdigest(), scored_only=a.scored_only,
+               n_crops=len(keys), n_vlm=nv, n_is_hand=nh), open(D / 'fused_meta.json', 'w'), indent=1)
 print(f'fused {len(keys)} crops; VLM done {nv}; is_hand among VLM-done: {nh}/{nv}')
