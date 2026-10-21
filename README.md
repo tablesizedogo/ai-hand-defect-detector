@@ -160,8 +160,8 @@ dataset of SD-generated close-up hands, were scored on the same 107 gold hands w
 
 Neither transfers to Civitai hands. The quality classifier is near chance and, at its own 0.5 threshold, calls 61–77% of OK hands
 "failed". The finger counter finds exactly 5 fingertips on only 1 of 98 OK hands, because most hands in real images are partly
-occluded or seen from the side. So the paper's rule "bad if n ≠ 5" flags almost every hand, and its small AUC edge comes from ties, not
-from counting. Both models expect frontal, open, full-frame hands. That supports the plan: a better teacher needs in-domain data.
+occluded or seen from the side. So the paper's rule "bad if n ≠ 5" flags almost every hand. Its small AUC edge comes from BAD crops more often having 0 detected fingertips (4 of 8 versus 32 of 98 OK
+at 2.0×), a "hard to read" signal rather than a real count. Both models expect frontal, open, full-frame hands. That supports the plan: a better teacher needs in-domain data.
 
 **Bottom line.** The pipeline is a useful *triage* tool: sort crops, and at a 10% false-alarm rate about a third of broken hands
 are caught. It is not yet an automatic QC gate. Next steps: (1) a stronger or ensembled teacher on upscaled crops, for example a
