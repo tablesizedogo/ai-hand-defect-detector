@@ -237,6 +237,37 @@ cd autolabel
     - `07_ingest_eval.py --gold-dir gold_check,gold_check_v2 [--write-calibration]` → `gold_check_combined/`.
   - Tested end to end on fake answers; those outputs were deleted.
 
+## Gold v2 answered and evaluated (2026-10-21 ~22:55 MSK)
+
+- **Answers** are in `gold_check_v2/answers.txt`, verbatim: bad 1 28 30 37 55 56 94 99; nohand 8 12 18 19 33 34 35 79 86 98 100; 14 skips.
+  That gives 67 OK, 8 BAD, 11 nohand, 14 skip, so 75 gold hands. Nothing was renumbered or rebuilt.
+- **Commands:**
+  - `07_ingest_eval.py --gold-dir gold_check_v2` → `gold_check_v2/eval.md` + `eval.json` (honest);
+  - `11_gold_v2_analysis.py` → `gold_check_v2/analysis.md` + `analysis.json` + `bad_and_false_alarms.jpg`: strata hit rate, v2 teacher on the 52 covered hands, gate, BAD ranks, false alarms;
+  - `07_ingest_eval.py --gold-dir gold_check,gold_check_v2 --write-calibration` → `gold_check_combined/` and `models/calibration.json`.
+- **Gold v2 AUC (weighted):**
+  - HADM alone 0.763 [0.51–0.96];
+  - v3 teacher 0.648 [0.43–0.85];
+  - CLIP-L v3 student 0.585, v2 student 0.519;
+  - det conf 0.538, Gemma 0.516;
+  - DINOv2 v3 0.505;
+  - v2 teacher 0.555, on its 52 covered hands only.
+- **The 0.79 on gold v1 did not hold.**
+- **Enrichment:** the low_teacher stratum had 4 BAD out of 43 judged hands (9.3%). The estimated population prevalence is 12.2%.
+  In the rest strata, q1 had 2/7, q2 1/8, q3 1/8 and q4 0/8.
+  Inside the low stratum, the v3 teacher has AUC 0.72 and HADM 0.80, while Gemma (0.37) and the CLIP-L student (0.29) are inverted.
+- **Pooled v1 + v2** (182 hands, 17 BAD): HADM 0.717, v3 teacher 0.714, CLIP-L v3 0.605.
+  Platt was refit for the CLIP-L v3 student: a=0.268, b=2.165, LOO ECE 0.336 → 0.038. The ONNX models are unchanged, because Platt is applied outside the model.
+- **Gate on v2:** 7 of the 8 gate_not_hand crops are nohand; #70 is an OK hand with p_hand 0.79. 4 nohand crops passed with p_hand ≥ 0.98: #8, #79, #98, #100.
+  Weighted nohand share among passed crops is 0.7%.
+- **Failure modes:**
+  1. False alarms on unusual-but-fine hands, now also from HADM: skeletal (#88, #95), robotic or chrome (#92, #68), glove fist (#23), stylized anime heart-hands (#97), blurry or noisy small hands (#16, #50).
+  2. Missed BAD in grips and holds: bowl #1, guitar #99, anime desk hand #94. Gemma and the detector rank these as clean and pull the fused score back up, even where HADM flags them (#1, #99).
+  3. Gemma's p_ok is near chance on this round.
+- **Next:** use HADM alone, or HADM-weighted, as the teacher, and drop Gemma p_ok from the quality score; keep Gemma only for the hand gate.
+  Then fine-tune a crop classifier on the HADM-based silver labels, or train a hand_bad detector on AbHuman/HAD plus HADM silver labels, on Kaggle.
+  Before claiming any gain, run gold v3 with ~100 crops sampled by HADM score.
+
 ## Check the VLM job
 
 ```bash

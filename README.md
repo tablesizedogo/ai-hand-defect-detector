@@ -1,6 +1,6 @@
 # Hand-defect detector for AI-generated images
 
-> **Status: stage 1 (data) and stage 1b (automatic labeling) are done.** On the 150-crop user-labeled gold set (only 9 broken hands, wide CIs) the first teacher and the CLIP-L student reach AUC ≈ 0.66–0.69. The v3 teacher (HADM-L + Gemma + detector confidence) reaches 0.79, but it was chosen on that same set; the CLIP-L student trained on it stays at 0.67. A second, independent 100-crop gold round is prepared. See [Gold-check results](#gold-check-results-honest-metrics).
+> **Status: stage 1 (data) and stage 1b (automatic labeling) are done.** On the independent gold v2 round (100 crops, 8 broken hands, wide CIs), HADM-L alone reaches AUC 0.76 [0.51–0.96]. The v3 fused teacher gets 0.65, and the CLIP-L student 0.59. The 0.79 of the v3 teacher on gold v1 was optimistic: it was chosen on that set. Automatic QC is not solved yet. Ranking by HADM-L is the best triage signal so far. See [Gold-check results](#gold-check-results-honest-metrics).
 
 Diffusion models still break hands: extra or fused fingers, broken wrists, mangled blobs. This project builds a detector that
 finds hands in generated images and classifies them as **`hand_ok`** or **`hand_bad`**. It ships as a **ComfyUI custom node** that
@@ -97,6 +97,43 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 ## Gold-check results (honest metrics)
+
+### Headline: gold v2 (independent round, the honest test)
+
+Gold v2 contains 100 new crops judged by the user. It was sampled with the v3 teacher before that round was labeled, and it is never used for training or for any modeling choice.
+It is enriched for likely-broken hands: 60 crops come from the lowest 10% of the v3 teacher, 32 are stratified over the rest, and 8 are gate-rejected crops.
+Every crop carries a sampling weight (stratum size / crops picked from it), so the metrics describe the full crop population.
+An enriched crop has weight 7.0, a crop from the other strata about 117. The 60 enriched crops are heavily over-sampled, so they count less each.
+
+The answers were 67 OK, **8 BAD**, 11 not-a-hand and 14 can't-judge, which leaves **75 gold hands**. The 95% CIs come from 2,000 label-stratified bootstrap resamples.
+With 8 positives, one BAD crop moves recall by about 12 points. Full tables: `autolabel_data/gold_check_v2/eval.md` and `analysis.md`.
+
+| score (BAD = positive class), gold v2 | AUC | AP (BAD) | recall BAD @ 5% FPR | recall BAD @ 10% FPR |
+|---|---|---|---|---|
+| HADM-L hand artifact alone | **0.76 [0.51–0.96]** | 0.34 [0.15–0.76] | 0.25 [0.00–0.80] | 0.28 [0.00–1.00] |
+| v3 teacher (HADM + Gemma + det conf) | 0.65 [0.43–0.85] | 0.20 [0.14–0.39] | 0.04 [0.00–0.20] | 0.06 [0.00–0.30] |
+| CLIP-L/14 student, v3 silver labels | 0.59 [0.33–0.85] | 0.22 [0.07–0.58] | 0.24 [0.00–0.60] | 0.24 [0.00–0.70] |
+| detector confidence | 0.54 [0.33–0.77] | 0.15 [0.09–0.32] | 0.00 [0.00–0.10] | 0.04 [0.00–0.20] |
+| CLIP-L/14 student, v2 silver labels | 0.52 [0.28–0.75] | 0.14 [0.08–0.32] | 0.01 [0.00–0.10] | 0.01 [0.00–0.10] |
+| Gemma-4-E4B alone | 0.52 [0.23–0.82] | 0.16 [0.08–0.40] | 0.01 [0.00–0.10] | 0.01 [0.00–0.50] |
+| DINOv2-base student, v3 / v2 labels | 0.51 / 0.45 | 0.14 / 0.13 | 0.00 / 0.01 | 0.00 / 0.01 |
+| v2 teacher (Gemma + det + CLIP), on the 52 hands it covers (7 BAD)\* | 0.56 [0.28–0.85] | 0.19 [0.13–0.45] | 0.06 | 0.07 |
+| *random score* | 0.50 | 0.12 | 0.05 | 0.10 |
+
+\* The v2 teacher was built on a 4,325-crop VLM snapshot. On the same 52 hands, the v3 teacher gets 0.65 and HADM 0.77.
+
+- **The 0.79 from gold v1 did not hold.** On v2 the v3 teacher reaches 0.65. Only HADM-L alone stays above 0.7: it got 0.66 on v1 and 0.76 on v2, and pooled over both rounds 0.72 [0.54–0.87].
+  Averaging Gemma and detector confidence into the teacher *hurt* on v2. Both are near chance on this round.
+- **The enrichment barely enriched.** Of the 43 judged hands from the bottom-10% stratum, only 4 are BAD (9%), against an estimated 12% in the population.
+  The teacher's lowest tail consists mostly of stylized, skeletal, robotic and gloved hands that are fine.
+- **Pooled v1 + v2** (182 hands, 17 BAD; each round's weights are rescaled to its own sample size; v1 is optimistic for v3):
+  HADM 0.72 [0.54–0.87], v3 teacher 0.71 [0.58–0.84], CLIP-L v3 student 0.61 [0.44–0.77], Gemma 0.60, detector conf 0.60.
+- **Calibration** (`models/calibration.json`, refit on v1 + v2): Platt on the CLIP-L v3 student, `a=0.268`, `b=2.165`.
+  Evaluated leave-one-out, ECE drops from 0.34 to 0.04 and Brier is 0.092. Platt only rescales the score, so the ONNX model is unchanged.
+- **Hand gate:** 7 of the 8 gate-rejected crops really are not hands. The eighth (#70) is an OK hand with p_hand 0.79.
+  4 of the 11 not-a-hand crops passed the gate with p_hand ≥ 0.98 (#8, #79, #98, #100). Among gate-passed crops, the estimated share of non-hands is 0.7%.
+
+### Gold v1 (first round; **optimistic for the v3 teacher**, which was chosen on it)
 
 **Gold set.** 150 crops, stratified by teacher-score decile and style, judged by the user (one pass, one annotator):
 98 OK hands, **9 BAD hands**, 34 "not a hand", 9 "can't judge". OK-vs-BAD metrics use the **107 gold hands** and are re-weighted
@@ -218,8 +255,8 @@ Results on gold v1 (107 hands, 9 BAD). **The v3 teacher was chosen after looking
 - **The student does not inherit the teacher's gain.** Its AUC moves from 0.664 to 0.669. With frozen CLIP-L features and a
   linear head, it can't see what HADM sees: #20, #38 and #147 stay in the "clean" half for the student, but HADM flags them.
   Getting there needs a fine-tuned backbone on higher-resolution crops, or running HADM at inference time.
-- **Calibration.** Platt scaling on gold v1, evaluated leave-one-out, brings ECE from 0.37 to 0.01. The fitted values (`a=0.420`, `b=2.400`) are in `models/calibration.json`.
-- **Gold v2 is prepared** in `autolabel_data/gold_check_v2/`: 100 new crops on 4 sheets. 60 come from the lowest 10% of the v3 teacher, 32 are stratified
+- **Calibration.** Platt scaling on gold v1, evaluated leave-one-out, brought ECE from 0.37 to 0.01 (`a=0.420`, `b=2.400`). It has since been refit on v1 + v2; see the top of this section.
+- **Gold v2 has been labeled.** Its results are at the top of this section; the v3 teacher reaches only 0.65 there. Gold v2 lives in `autolabel_data/gold_check_v2/`: 100 new crops on 4 sheets. 60 come from the lowest 10% of the v3 teacher, 32 are stratified
   over the rest, and 8 are gate-rejected crops. It was sampled before the v3 students were trained, and they never train on it, so it is an honest test of the v3 teacher and students.
   `07_ingest_eval.py --gold-dir gold_check_v2` evaluates v2 alone. `--gold-dir gold_check,gold_check_v2` pools both rounds, rescaling each round's weights to its own sample size.
 
