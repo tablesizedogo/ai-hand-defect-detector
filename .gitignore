@@ -29,3 +29,6 @@ auto/sheets/
 auto/*.npy
 auto/*.log
 models/*_dry.onnx
+
+# separate repository (ComfyUI node pack)
+comfyui_hand_fixer/

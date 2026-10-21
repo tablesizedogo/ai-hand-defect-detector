@@ -1,0 +1,21 @@
+{
+ "score": "hadm_hand_raw",
+ "formula": "p_bad = sigmoid(a * raw + b)",
+ "a": 4.107978627262228,
+ "b": -4.039425752512218,
+ "n_hands": 182,
+ "n_bad": 17,
+ "ece_raw_as_prob": 0.294806435808392,
+ "ece_loo": 0.013205086806357874,
+ "brier_loo": 0.08646597209969559,
+ "base_rate_weighted": 0.09977026851535845,
+ "gold": "gold_check + gold_check_v2 (pooled, per-round rescaled weights)",
+ "example": {
+  "0.0": 0.017302918096596356,
+  "0.3": 0.056945351824392296,
+  "0.5": 0.1207405023980219,
+  "0.7": 0.23797010812514874,
+  "0.9": 0.4152642459257763
+ },
+ "note": "P(bad) among gate-passed hand crops of the Civitai corpus; 17 BAD only, treat as approximate"
+}

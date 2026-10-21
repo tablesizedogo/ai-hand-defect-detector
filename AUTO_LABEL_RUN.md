@@ -355,3 +355,20 @@ All metrics are re-weighted by the stratified sampling weights.
   - CV agreement with silver labels: AUC 0.98;
   - on the 35 study hands: student 0.90 vs teacher 0.89.
   These are not honest metrics.
+
+## Wrap-up: HADM scorer + ComfyUI node pack (2026-10-21 ~23:30 MSK)
+
+- Final choice: **HADM-L is the hand-quality scorer**. Gemma is used only as the offline hand/not-hand gate (p_hand ≥ 0.95), and the CLIP-L student is kept as a light, clearly weaker fallback.
+- `autolabel/12_hadm_calibration.py` → `models/hadm_calibration.json`: Platt on pooled gold (182 hands, 17 BAD), `p_bad = sigmoid(4.108·raw − 4.039)`, LOO ECE 0.013, Brier 0.086.
+- `hand_defects/hadm_scorer.py`: Python API and CLI. Its `_hadm_backend.py`, `_geometry.py` and `_detector.py` are byte-identical copies of the node pack's files, which `tests/test_sync.py` checks.
+- `comfyui_hand_fixer/`: a separate git repository, ignored by this one. It contains the ComfyUI node pack, an API-format example workflow, 14 CPU tests (mocks plus a real HADM build with random weights plus the real YOLO), and the Kaggle E2E script.
+- E2E test: private Kaggle kernel `artem4767/hand-fixer-comfyui-e2e`, T4, 11.3 min session. Headless ComfyUI with DreamShaper 8 inpainting, HADM-L and hand_yolov8s on 5 SFW images with gold-BAD hands.
+  - 5/5 workflows succeeded.
+  - 3 hands were flagged, and Best-of-4 lowered P(bad) on all 3 (0.29→0.16, 0.23→0.19, 0.23→0.20).
+  - By eye: 1 clear improvement, 1 ambiguous, and 1 where the generic prompt removed the held revolver.
+  - sha256 values from the kernel log:
+    - HADM-L_0249999.pth `3a495952778fbb9e67024d1fc48e49a5be55a21a58c608741ccb02c1dfd407f3`
+    - hand_yolov8s.pt `70b540063fbc385736d8258970744a4afbc4cbf7932134bae3b24cdadeadec06`
+    - DreamShaper_8_INPAINTING `ac84e05d5039d7a8aea3ced335ac7c56da6d3c6816465651f928b137c3a7b24a`
+- The old README moved to `docs/DETAILED_LOG.md`, and the new README is the short summary.
+- Total Kaggle GPU time for the project is about 53 min.
