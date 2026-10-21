@@ -163,6 +163,36 @@ Neither transfers to Civitai hands. The quality classifier is near chance and, a
 occluded or seen from the side. So the paper's rule "bad if n ≠ 5" flags almost every hand. Its small AUC edge comes from BAD crops more often having 0 detected fingertips (4 of 9 versus 32 of 98 OK
 at 2.0×), a "hard to read" signal rather than a real count. Both models expect frontal, open, full-frame hands. That supports the plan: a better teacher needs in-domain data.
 
+### HADM-L (Adobe human-artifact detector)
+
+[HADM-L](https://github.com/wangkaihong/HADM) ([arXiv:2411.13842](https://arxiv.org/abs/2411.13842)) is a ViTDet / EVA-02-L
+Cascade R-CNN that detects artifact regions on generated people. One of its classes is `hand`. It ran on a private Kaggle T4
+on the **full-resolution Civitai originals** of the gold images (144 of 145; long side 1024), at 1.6 s per image and about
+6.5 GPU-minutes in total. It needed a port to current PyTorch, with no xformers and no compiled detectron2 ops; see
+`autolabel/09_hadm_kaggle/README.md`. A crop's score is the highest `hand`-artifact score among detections that match the crop
+box. Several matching rules give nearly the same result (full table in `autolabel_data/gold_check/eval_hadm.md`).
+
+| score (BAD = positive class) | AUC | AP (BAD) | recall BAD @ 5% FPR | recall BAD @ 10% FPR |
+|---|---|---|---|---|
+| HADM-L hand artifact, detection inside the crop (≥ 50% of its area) | 0.66 [0.39–0.87] | 0.34 [0.11–0.63] | 0.35 [0.00–0.80] | 0.46 [0.10–0.80] |
+| HADM-L hand artifact, IoU ≥ 0.1 with the hand box | 0.65 [0.38–0.87] | 0.32 [0.10–0.61] | 0.13 [0.00–0.70] | 0.46 [0.10–0.80] |
+| HADM-L, max over the whole image (no localisation) | 0.62 [0.36–0.84] | 0.22 [0.09–0.53] | 0.13 [0.00–0.60] | 0.35 [0.00–0.80] |
+| *ours: detector confidence / Gemma / CLIP-L student* | 0.71 / 0.69 / 0.66 | 0.25 / 0.22 / 0.21 | 0.23 / 0.23 / 0.23 | 0.23 / 0.34 / 0.34 |
+| rank average of HADM-L + Gemma + detector conf\* | 0.79 [0.65–0.91] | 0.32 [0.14–0.60] | 0.23 [0.00–0.60] | 0.23 [0.00–0.80] |
+
+\* The fusion was chosen after seeing the gold results, so it is optimistic. For comparison, Gemma + detector conf alone reached 0.72.
+In a paired bootstrap it beats the CLIP-L student by +0.12 AUC [−0.06, +0.32]. It beats Gemma alone in 87% of resamples.
+
+- **Alone, HADM-L is not a better teacher.** Its AUC is 0.65–0.66, the same as the student and below detector confidence.
+  The paired difference to every one of our scores has a CI spanning roughly ±0.4. It flags many OK hands too: the median OK
+  hand has a hand-artifact score of 0.40.
+- **It is complementary.** HADM-L ranks the subtle grip and finger-count errors that every other score missed among the top
+  8%: #20, #30 and #38. It also puts #147 in the top 21%; every other score called that hand clean.
+  It misses the gross, blurry broken hands that Gemma and the detector catch (#1, #8, #10). This is why the fusion helps.
+- **By style** (2 / 2 / 5 BAD, anecdotal): anime 0.73, art 0.96, photo 0.65. On anime, HADM-L is the best single score here; Gemma gets 0.68 and the student 0.55.
+- Verdict: HADM-L is worth adding as a **third teacher component**, not as a replacement. Scoring all 2,500 source images would take about 70 T4-minutes.
+  Proving the gain still needs more BAD gold examples.
+
 **Bottom line.** The pipeline is a useful *triage* tool: sort crops, and at a 10% false-alarm rate about a third of broken hands
 are caught. It is not yet an automatic QC gate. Next steps: (1) a stronger or ensembled teacher on upscaled crops, for example a
 larger VLM, several prompts, or crops from full-resolution images; (2) a second gold round enriched with low-score crops (active

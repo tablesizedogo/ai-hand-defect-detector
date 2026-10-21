@@ -181,6 +181,23 @@ Outputs are `gold_check/eval.md` and `eval.json`, and `models/calibration.json`.
 3. Run a second gold round of ~100 crops enriched with the lowest student scores (active learning) to get more than 9 positives.
 4. Optional: add HAD positives.
 
+## HADM-L evaluated as a teacher (2026-10-21 ~21:45 MSK)
+
+Scripts are in `autolabel/09_hadm_kaggle/`; its `README.md` covers setup and porting. Data is in `autolabel_data/hadm/`: `input/`, `out_gold/` (kernel output + log) and `hadm_gold_scores.jsonl`. Results are in `gold_check/eval_hadm.{md,json}`.
+
+- **Kaggle** (account `artem4767`, everything private):
+  - dataset `artem4767/hand-defects-hadm-gold-input`: 145 source images, `boxes.json`, `hadm_infer.py`;
+  - kernel `artem4767/hand-defects-hadm-gold`: T4, internet on.
+  - One run, ~6.5 GPU-min: weights download 84 s, inference 1.61 s/image.
+  - The kaggle CLI lives in `/workspace/.kaggle_venv`. Auth is `KAGGLE_API_TOKEN=$KAGGLE_KEY KAGGLE_USERNAME=artem4767`, and no token is stored in the repo.
+- **Stack:** official HADM code @ `d09f667` on Kaggle's torch 2.11/cu128, not compiled. xformers attention is replaced by torch SDPA, plus small compatibility shims. The checkpoint loaded with no missing keys.
+- **Result on the 107 gold hands** (9 BAD):
+  - HADM-L alone: AUC 0.65–0.66 [~0.38–0.87], so no better than detector conf 0.71, Gemma 0.69 or the CLIP-L student 0.66. CountHallu got ≤ 0.64.
+  - It is complementary: it catches the subtle grip defects #20, #30, #38 and partly #147, and misses the blurry gross ones #1, #8, #10.
+  - Rank average HADM + Gemma + det_conf: **0.79 [0.65–0.91]**, chosen on gold, so optimistic. Gemma + det alone gives 0.72.
+- **Next:** if the fusion is adopted, score all 2,500 source images, ~70 T4-min. Copy `kernel_gold` with a new input dataset, then add HADM as a third component in `04_fuse.py`.
+  Then a second gold round with more BAD examples to confirm.
+
 ## Check the VLM job
 
 ```bash
