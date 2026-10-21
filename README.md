@@ -144,6 +144,25 @@ does not fix the teacher. Gating on detector confidence did not help.
   flagged as broken. The teacher confuses "unusual" with "malformed".
 - **DINOv2 features carry almost no defect signal here.** CLIP-L is the only usable student backbone.
 
+### External baselines
+
+Two ready-made hand-quality models from CountHallu ([arXiv:2510.13080](https://arxiv.org/abs/2510.13080)), trained on the RealHand
+dataset of SD-generated close-up hands, were scored on the same 107 gold hands with the same weights and bootstrap
+(`autolabel/08_eval_external.py`, full table in `autolabel_data/gold_check/eval_external.md`). Each model saw the original gold crop
+(1.3× box) and a 2.0× context crop from the same 512-px image; the better variant is shown.
+
+| score (BAD = positive class) | AUC | AP (BAD) | recall BAD @ 5% FPR | recall BAD @ 10% FPR |
+|---|---|---|---|---|
+| [quality classifier](https://huggingface.co/ShyFoo/CountHallu-quality_cls_model-RealHand) P(clean), MaxViT-S, Apache-2.0 (2.0× crop) | 0.57 [0.36–0.77] | 0.17 [0.08–0.46] | 0.13 [0.00–0.40] | 0.23 [0.00–0.50] |
+| [finger counter](https://huggingface.co/ShyFoo/CountHallu-counting_model-RealHand) −\|n − 5\|, YOLO, AGPL-3.0 (2.0× crop) | 0.64 [0.46–0.81] | 0.14 [0.08–0.35] | 0.11 [0.00–0.30] | 0.11 [0.00–0.30] |
+| finger counter, soft P(n = 5) from box confidences | 0.50 [0.30–0.67] | 0.09 [0.06–0.13] | 0.00 | 0.00 |
+| *ours: CLIP-L/14 student (for comparison)* | 0.66 [0.44–0.85] | 0.21 [0.10–0.50] | 0.23 [0.00–0.60] | 0.34 [0.00–0.70] |
+
+Neither transfers to Civitai hands. The quality classifier is near chance and, at its own 0.5 threshold, calls 61–77% of OK hands
+"failed". The finger counter finds exactly 5 fingertips on only 1 of 98 OK hands, because most hands in real images are partly
+occluded or seen from the side. So the paper's rule "bad if n ≠ 5" flags almost every hand, and its small AUC edge comes from ties, not
+from counting. Both models expect frontal, open, full-frame hands. That supports the plan: a better teacher needs in-domain data.
+
 **Bottom line.** The pipeline is a useful *triage* tool: sort crops, and at a 10% false-alarm rate about a third of broken hands
 are caught. It is not yet an automatic QC gate. Next steps: (1) a stronger or ensembled teacher on upscaled crops, for example a
 larger VLM, several prompts, or crops from full-resolution images; (2) a second gold round enriched with low-score crops (active
