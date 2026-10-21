@@ -27,33 +27,56 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, roc_curve, average_precision_score
 from common import R, D, read_jsonl, ece
-ap = argparse.ArgumentParser(); ap.add_argument('--gold-dir', default='gold_check'); ap.add_argument('--answers', default=None)
+ap = argparse.ArgumentParser(); ap.add_argument('--gold-dir', default='gold_check',
+    help='gold folder under autolabel_data, or a comma-separated list (e.g. gold_check,gold_check_v2) to pool several rounds')
+ap.add_argument('--answers', default=None, help='answers file (single gold dir only; default <gold dir>/answers.txt)')
+ap.add_argument('--out-dir', default=None, help='where eval.md/json go (default: the gold dir; gold_check_combined for a list)')
 ap.add_argument('--main', default='clip_l14_logreg', help='student tag used for models/calibration.json')
+ap.add_argument('--write-calibration', action='store_true', help='write models/calibration.json (default only for --gold-dir gold_check)')
 ap.add_argument('--boot', type=int, default=2000); ap.add_argument('--seed', type=int, default=0); a = ap.parse_args()
-G = D / a.gold_dir; a.answers = a.answers or str(G / 'answers.txt')
-man = json.load(open(G / 'manifest.json')); items = {it['num']: it for it in man['items']}
-lab = {}
-for line in open(a.answers):
-    line = line.split('#')[0]; m = re.match(r'\s*(bad|nohand|skip)\s*:(.*)', line, re.I)
-    if m:
-        for n in map(int, re.findall(r'\d+', m.group(2))):
-            if n not in items: raise SystemExit(f'number {n} not in gold set')
-            if n in lab and lab[n] != m.group(1).lower(): raise SystemExit(f'number {n} has two labels')
-            lab[n] = m.group(1).lower()
-for n in items: lab.setdefault(n, 'ok')
+DIRS = a.gold_dir.split(','); MULTI = len(DIRS) > 1
+G = D / (a.out_dir or ('gold_check_combined' if MULTI else DIRS[0])); G.mkdir(exist_ok=True)
+ROUND = {'gold_check': 'v1', 'gold_check_v2': 'v2'}
+items, lab = {}, {}
+for gd in DIRS:
+    man = json.load(open(D / gd / 'manifest.json')); its = {it['num']: it for it in man['items']}
+    ans = a.answers if (a.answers and not MULTI) else str(D / gd / 'answers.txt'); ll = {}
+    for line in open(ans):
+        line = line.split('#')[0]; m = re.match(r'\s*(bad|nohand|skip)\s*:(.*)', line, re.I)
+        if m:
+            for n in map(int, re.findall(r'\d+', m.group(2))):
+                if n not in its: raise SystemExit(f'number {n} not in gold set {gd}')
+                if n in ll and ll[n] != m.group(1).lower(): raise SystemExit(f'number {n} has two labels ({gd})')
+                ll[n] = m.group(1).lower()
+    for n in its: ll.setdefault(n, 'ok')
+    # pooling rounds with different sampling designs: each round's weights are rescaled to sum to its own sample size,
+    # so every round is an (approximately) unbiased re-weighted sample of the crop population and counts by its size
+    sc_ = len(its) / sum(it['weight'] for it in its.values()) if MULTI else 1.0
+    for n, it in its.items():
+        nid = f"{ROUND.get(gd, gd)}#{n}" if MULTI else n
+        items[nid] = dict(it, weight=it['weight'] * sc_, round=gd); lab[nid] = ll[n]
 fu = read_jsonl(D / 'fused.jsonl')
-fmeta = json.load(open(D / 'fused_meta.json')); HAND_THR = fmeta.get('hand_thr', 0.5)
-scores = {'teacher_ok (fused)': lambda k: fu[k]['teacher_ok'], 'gemma_p_ok': lambda k: fu[k]['gemma_p_ok'],
+fmeta = json.load(open(D / 'fused_meta.json')); HAND_THR = fmeta.get('hand_thr', 0.5); TEACHER = fmeta.get('teacher', 'gemma_det_clip')
+CUR = '  [v3: hadm+gemma+det]' if TEACHER == 'hadm_gemma_det' else f'  [gate {HAND_THR:.2f}]'
+scores = {f'teacher_ok (fused, {TEACHER})': lambda k: fu[k]['teacher_ok'], 'gemma_p_ok': lambda k: fu[k]['gemma_p_ok'],
           'clip_b32_zs': lambda k: fu[k]['clip_p_ok'], 'det_conf': lambda k: fu[k]['det_conf']}
+if all(fu[k].get('hadm_hand') is not None for k in fu): scores['hadm_hand (−score)'] = lambda k: -fu[k]['hadm_hand']
+V2 = D / 'v2_gate095_snap4325'
+if TEACHER != 'gemma_det_clip' and (V2 / 'fused.jsonl').exists():
+    fu2 = read_jsonl(V2 / 'fused.jsonl'); scores['teacher_ok v2 (gemma+det+clip, 4,325 snapshot)'] = lambda k: fu2[k]['teacher_ok']
 PROB = {'gemma_p_ok', 'clip_b32_zs'}
-for p in sorted(D.glob('student_*.jsonl')) + sorted((D / 'v1_gate050').glob('student_*.jsonl')):
-    if p.stem.endswith('_dry'): continue
-    nm = p.stem[len('student_'):] + ('  [gate 0.50, v1]' if p.parent.name == 'v1_gate050' else f'  [gate {HAND_THR:.2f}]')
-    st = read_jsonl(p); scores[nm] = (lambda st: (lambda k: st[k]['student_p_ok']))(st); PROB.add(nm)
-main = next(s for s in scores if s.startswith(a.main + '  [gate') and 'v1' not in s)
+OLD = [(V2, '  [v2: gemma+det+clip, 4,325 snapshot]'), (D / 'v1_gate050', '  [gate 0.50, v1]')] if TEACHER != 'gemma_det_clip' else [(D / 'v1_gate050', '  [gate 0.50, v1]')]
+for folder, suf in [(D, CUR)] + OLD:
+    for p in sorted(folder.glob('student_*.jsonl')):
+        if p.stem.endswith('_dry'): continue
+        nm = p.stem[len('student_'):] + suf
+        st = read_jsonl(p); scores[nm] = (lambda st: (lambda k: st[k]['student_p_ok']))(st); PROB.add(nm)
+main = a.main + CUR
 H = [n for n in items if lab[n] in ('ok', 'bad')]
 y = np.array([lab[n] == 'ok' for n in H], int); w = np.array([items[n]['weight'] for n in H]); K = [items[n]['key'] for n in H]
 S = {s: np.array([f(k) for k in K], float) for s, f in scores.items()}
+S = {s: x for s, x in S.items() if not np.isnan(x).any()}  # e.g. old snapshot scores missing for some crops
+PROB = {s for s in PROB if s in S}
 logit = lambda p: np.log(np.clip(p, 1e-6, 1 - 1e-6) / (1 - np.clip(p, 1e-6, 1 - 1e-6)))
 
 def metrics(yy, x, ww, prob):
@@ -77,8 +100,8 @@ BI = [np.concatenate([rng.choice(io, len(io)), rng.choice(ib, len(ib))]) for _ i
 def with_ci(fn):
     pt = fn(np.arange(len(y))); bs = [fn(ix) for ix in BI]
     return {k: (float(pt[k]), float(np.percentile([b[k] for b in bs], 2.5)), float(np.percentile([b[k] for b in bs], 97.5))) for k in pt}
-res = dict(main=main, hand_thr=HAND_THR, n_boot=a.boot, counts={c: sum(v == c for v in lab.values()) for c in ('ok', 'bad', 'nohand', 'skip')},
-           bad_nums=sorted(n for n in H if lab[n] == 'bad'), scores={}, calibration={})
+res = dict(gold_dirs=DIRS, teacher=TEACHER, main=main, hand_thr=HAND_THR, n_boot=a.boot, counts={c: sum(v == c for v in lab.values()) for c in ('ok', 'bad', 'nohand', 'skip')},
+           bad_nums=sorted((n for n in H if lab[n] == 'bad'), key=(lambda n: (n.split('#')[0], int(n.split('#')[1]))) if MULTI else None), scores={}, calibration={})
 for s, x in S.items():
     res['scores'][s] = with_ci(lambda ix, x=x, s=s: metrics(y[ix], x[ix], w[ix], s in PROB))
 for s in [s for s in S if s in PROB]:
@@ -94,9 +117,9 @@ iso = IsotonicRegression(out_of_bounds='clip', y_min=0, y_max=1).fit(x, y, sampl
 json.dump(dict(score=main.split('  ')[0], model_file=f"models/hand_ok_{main.split('  ')[0]}.onnx", method='platt',
                platt=dict(a=float(pl.coef_[0, 0]), b=float(pl.intercept_[0]), formula='p_ok = sigmoid(a*logit(student_p_ok)+b)'),
                isotonic_reference_only=dict(x=iso.X_thresholds_.tolist(), y=iso.y_thresholds_.tolist()),
-               n_gold_hands=len(H), n_bad=int((y == 0).sum()), hand_thr=HAND_THR,
-               note='fitted on the 150-crop user gold check (9 BAD); treat as approximate'),
-          open((R / 'models/calibration.json') if a.gold_dir == 'gold_check' else (G / 'calibration.json'), 'w'), indent=1)
+               n_gold_hands=len(H), n_bad=int((y == 0).sum()), hand_thr=HAND_THR, teacher=TEACHER, gold_dirs=DIRS,
+               note=f'fitted on the user gold check ({",".join(DIRS)}; {int((y == 0).sum())} BAD); treat as approximate'),
+          open((R / 'models/calibration.json') if (a.gold_dir == 'gold_check' or a.write_calibration) else (G / 'calibration.json'), 'w'), indent=1)
 # ---- hand gate vs the user's nohand answers (skip excluded)
 gi = [n for n in items if lab[n] != 'skip']; tn = np.array([lab[n] == 'nohand' for n in gi]); gw = np.array([items[n]['weight'] for n in gi])
 ph = np.array([fu[items[n]['key']]['gemma_p_hand'] for n in gi]); dc = np.array([fu[items[n]['key']]['det_conf'] for n in gi])
@@ -117,10 +140,12 @@ res['bad_rank_pct'] = pct
 json.dump(res, open(G / 'eval.json', 'w'), indent=1)
 # ---- markdown
 c3 = lambda t, d=3: f'{t[0]:.{d}f} [{t[1]:.{d - 1}f}–{t[2]:.{d - 1}f}]'
-L = [f"# Gold-check evaluation ({len(items)} crops judged by the user)", '',
+L = [f"# Gold-check evaluation ({len(items)} crops judged by the user; {', '.join(DIRS)})", '',
      f"labels: {res['counts']} → **{len(H)} gold hands, of which {int((y == 0).sum())} BAD**. Point estimate [95% bootstrap CI, "
-     f"{a.boot} label-stratified resamples]. With only {int((y == 0).sum())} BAD the CIs are wide: one BAD crop moves recall by ~11 points.", '',
-     f"Current hand gate: Gemma p_hand >= {HAND_THR}. Main score (calibration.json): `{main}`.", '',
+     f"{a.boot} label-stratified resamples]. With only {int((y == 0).sum())} BAD the CIs are wide: one BAD crop moves recall by ~{100 / max(1, int((y == 0).sum())):.0f} points.", '',
+     f"Current hand gate: Gemma p_hand >= {HAND_THR}. Current teacher: `{TEACHER}`. Main score (calibration.json): `{main}`.", '',
+     *(["**Optimism warning:** the v3 teacher (HADM + Gemma + detector conf) was chosen after looking at gold v1, so gold-v1 numbers for the v3 teacher and its students are optimistic. Gold v2 (not used for any choice) is the honest check.", ''] if TEACHER == 'hadm_gemma_det' else []),
+     *([f"Rounds pooled: {', '.join(DIRS)}; each round's sampling weights are rescaled to sum to its own sample size. Item ids are `<round>#<number>`.", ''] if MULTI else []),
      '## OK vs BAD (BAD = positive class)', '', '| score | AUC | AP (BAD) | recall BAD @5% FPR | recall BAD @10% FPR |', '|---|---|---|---|---|']
 for s, r in sorted(res['scores'].items(), key=lambda t: -t[1]['auc'][0]):
     L.append(f"| {s} | {c3(r['auc'])} | {c3(r['ap_bad'])} | {c3(r['rec@5fpr'], 2)} | {c3(r['rec@10fpr'], 2)} |")
@@ -135,6 +160,6 @@ L += ['', '## Hand gate vs the user\'s "nohand" answers', '', f"{gate['n']} non-
 for nm, r in gate['rules'].items():
     L.append(f"| {nm} | {r['precision']:.2f} | {r['recall']:.2f} | {r['nohand_left_in_hands']} | {r['ok_lost']} | {r['bad_lost']} | {r['nohand_share_of_passed']:.1%} |")
 L += ['', '## Rank of each BAD crop (percentile among gold hands; 0 = most suspicious, flagged first)', '',
-      '| # | ' + ' | '.join(s.split('  ')[0] + (' v1' if 'v1' in s else '') for s in S) + ' |', '|---' * (len(S) + 1) + '|']
+      '| # | ' + ' | '.join(s.split('  ')[0] + (' v1' if 'gate 0.50' in s else ' v2' if '[v2' in s else '') for s in S) + ' |', '|---' * (len(S) + 1) + '|']
 for n in res['bad_nums']: L.append(f'| {n} | ' + ' | '.join(f'{pct[s][n]:.2f}' for s in S) + ' |')
 open(G / 'eval.md', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))

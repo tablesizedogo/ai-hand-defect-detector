@@ -19,7 +19,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--repo', required=True); ap.add_argument('--weights', required=True)
 ap.add_argument('--images', required=True); ap.add_argument('--out', required=True)
 ap.add_argument('--score-thresh', type=float, default=0.001); ap.add_argument('--device', default='cuda')
-ap.add_argument('--limit', type=int, default=0); ap.add_argument('--random-init', action='store_true')
+ap.add_argument('--limit', type=int, default=0); ap.add_argument('--shard', type=int, default=0); ap.add_argument('--nshards', type=int, default=1); ap.add_argument('--random-init', action='store_true')
 ap.add_argument('--config', default='projects/ViTDet/configs/eva2_o365_to_coco/demo_local.py')
 a = ap.parse_args()
 sys.path.insert(0, a.repo)
@@ -65,6 +65,7 @@ if not a.random_init:
 model.eval(); print(f'model ready in {time.time() - t0:.0f}s', flush=True)
 inf = DefaultInferencer(cfg, model)
 files = sorted(f for f in os.listdir(a.images) if f.lower().endswith(('.jpg', '.jpeg')))
+files = files[a.shard::a.nshards]
 if a.limit: files = files[:a.limit]
 res, t1 = {}, time.time()
 for i, f in enumerate(files):
@@ -74,9 +75,10 @@ for i, f in enumerate(files):
                   class_id=ins.pred_classes.tolist(), **{'class': [classes[c] for c in ins.pred_classes.tolist()]})
     if i % 10 == 0 or i == len(files) - 1:
         print(f'{i + 1}/{len(files)} {f} n={len(ins)} {(time.time() - t1) / (i + 1):.2f}s/img', flush=True)
+    if i % 200 == 199: json.dump(dict(meta=dict(partial=True), detections=res), open(a.out + '.partial', 'w'))
 meta = dict(classes=classes, score_thresh=a.score_thresh, config=a.config, weights=os.path.basename(a.weights),
             torch=torch.__version__, cuda=torch.version.cuda, device=a.device,
             gpu=torch.cuda.get_device_name(0) if a.device == 'cuda' else None,
-            n_images=len(files), sec_per_image=(time.time() - t1) / max(1, len(files)), random_init=a.random_init)
+            n_images=len(files), shard=a.shard, nshards=a.nshards, sec_per_image=(time.time() - t1) / max(1, len(files)), random_init=a.random_init)
 json.dump(dict(meta=meta, detections=res), open(a.out, 'w'))
 print('wrote', a.out, meta, flush=True)

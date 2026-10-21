@@ -198,6 +198,45 @@ Scripts are in `autolabel/09_hadm_kaggle/`; its `README.md` covers setup and por
 - **Next:** if the fusion is adopted, score all 2,500 source images, ~70 T4-min. Copy `kernel_gold` with a new input dataset, then add HADM as a third component in `04_fuse.py`.
   Then a second gold round with more BAD examples to confirm.
 
+## Full-set HADM run + v3 teacher + gold v2 prepared (2026-10-21 ~22:40 MSK)
+
+- **HADM-L on all crops:**
+  - Input: 2,500 source images, of which 2,491 are Civitai originals at 1024 px long side and 9 are local 512-px fallbacks (CDN 404/522). Built with `09_hadm_kaggle/01_build_input.py --all` → `autolabel_data/hadm/input_all/`.
+  - Uploaded as the private dataset `artem4767/hand-defects-hadm-all-input`, 605 MB.
+  - Kernel `artem4767/hand-defects-hadm-all` (private), `09_hadm_kaggle/kernel_all/`: 2 shards, one per T4, the second starting after the first has loaded weights.
+  - Session 34.5 min: weights 137 s, inference 31.6 min at 1.45 s/image per GPU.
+  - Output is in `autolabel_data/hadm/out_all/`. The scores on the gold images are identical to the gold run.
+  - `09_hadm_kaggle/04_crop_scores.py` → `autolabel_data/hadm_hand.jsonl` (`hadm_hand_iod50` = rule "box ≥ 50% inside crop").
+- **Gemma:** `ALL DONE` 21:11 MSK, 5,604 lines, 0 errors.
+- **Archived before overwriting:** `autolabel_data/v2_gate095_snap4325/` (fused, students, eval) and `models/v2_gate095_snap4325/` (ONNX + calibration).
+- **Commands:**
+
+```bash
+cd autolabel
+../.venv/bin/python 04_fuse.py --teacher hadm_gemma_det --hand-thr 0.95      # full vlm_gemma4e4b.jsonl; is_hand 4,314/5,604
+../.venv/bin/python 10_goldset_v2.py --replace 138167122_0,144055360_0,137639480_1,144564484_2,135336233_0   # BEFORE training
+../.venv/bin/python 05_silver_train.py --emb clip_l14 --model logreg         # excludes gold v1 + v2 + study-40
+../.venv/bin/python 05_silver_train.py --emb dinov2_base --model logreg
+../.venv/bin/python 07_ingest_eval.py                                         # gold v1 -> gold_check/eval.md, models/calibration.json
+```
+
+- **Silver labels:** pool 4,075 → 612 BAD (teacher ≤ 0.377) and 2,038 OK (≥ 0.536).
+  Silver CV AUC: CLIP-L 0.895, DINOv2 0.874.
+- **Gold v1** (optimistic for v3, because the teacher was chosen on it):
+  - v3 teacher 0.792 [0.66–0.91];
+  - CLIP-L v3 student 0.669 [0.44–0.85], versus 0.664 for v2;
+  - DINOv2 v3 0.564.
+  - Platt for CLIP-L v3: a=0.420, b=2.400.
+- **Gold v2** (`gold_check_v2/`, not sent yet):
+  - 100 crops on `sheet_01..04.jpg`. Strata: `low_teacher` 60 from the lowest 10% of the v3 teacher, `rest_q1..q4` 8 each, `gate_not_hand` 8.
+  - Weights = stratum size / picks over the population of all crops minus gold v1 and study-40.
+  - SFW check: all 4 sheets inspected. 5 crops were replaced, including old #31, #67, #72, #82 and #84: possible bare skin or torso, and hands on the chest area.
+    The replacements were re-checked. The swaps are listed in `manifest.json`.
+  - When the answers come, put them in `gold_check_v2/answers.txt` (same format as v1) and run:
+    - `07_ingest_eval.py --gold-dir gold_check_v2` (honest);
+    - `07_ingest_eval.py --gold-dir gold_check,gold_check_v2 [--write-calibration]` → `gold_check_combined/`.
+  - Tested end to end on fake answers; those outputs were deleted.
+
 ## Check the VLM job
 
 ```bash

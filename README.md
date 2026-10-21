@@ -1,6 +1,6 @@
 # Hand-defect detector for AI-generated images
 
-> **Status: stage 1 (data) and stage 1b (automatic labeling) are done; the first honest check on a 150-crop user-labeled gold set shows the automatic teacher is still weak (AUC ≈ 0.66–0.69 for the teacher and the CLIP-L student, only 9 broken hands in the set, wide CIs).** See [Gold-check results](#gold-check-results-honest-metrics).
+> **Status: stage 1 (data) and stage 1b (automatic labeling) are done.** On the 150-crop user-labeled gold set (only 9 broken hands, wide CIs) the first teacher and the CLIP-L student reach AUC ≈ 0.66–0.69. The v3 teacher (HADM-L + Gemma + detector confidence) reaches 0.79, but it was chosen on that same set; the CLIP-L student trained on it stays at 0.67. A second, independent 100-crop gold round is prepared. See [Gold-check results](#gold-check-results-honest-metrics).
 
 Diffusion models still break hands: extra or fused fingers, broken wrists, mangled blobs. This project builds a detector that
 finds hands in generated images and classifies them as **`hand_ok`** or **`hand_bad`**. It ships as a **ComfyUI custom node** that
@@ -192,6 +192,36 @@ In a paired bootstrap it beats the CLIP-L student by +0.12 AUC [−0.06, +0.32].
 - **By style** (2 / 2 / 5 BAD, anecdotal): anime 0.73, art 0.96, photo 0.65. On anime, HADM-L is the best single score here; Gemma gets 0.68 and the student 0.55.
 - Verdict: HADM-L is worth adding as a **third teacher component**, not as a replacement. Scoring all 2,500 source images would take about 70 T4-minutes.
   Proving the gain still needs more BAD gold examples.
+
+### v3 teacher: HADM-L + Gemma + detector confidence (full set)
+
+HADM-L was run on all 2,500 source images behind the 5,604 crops, in about 35 min of Kaggle 2×T4 time. The Gemma job had also
+finished all crops. The fusion was then rebuilt on the full set with the new teacher. It averages the ranks of the HADM-L hand-artifact
+score (detection ≥ 50% inside the crop), Gemma p_ok and detector confidence; CLIP zero-shot is dropped. The hand gate stays at Gemma p_hand ≥ 0.95. Run with `04_fuse.py --teacher hadm_gemma_det`.
+The old outputs are kept in `autolabel_data/v2_gate095_snap4325/` and `models/v2_gate095_snap4325/`.
+
+**Silver labels:** 4,314 of 5,604 crops pass the gate. The training pool has 4,075 hands, after leaving out gold v1, gold v2 and the 40 study crops.
+That gives 612 BAD and 2,038 OK, with 1,425 discarded. Silver CV AUC: CLIP-L 0.895 (v2: 0.957), DINOv2 0.874. The new teacher is harder to imitate from frozen embeddings.
+
+Results on gold v1 (107 hands, 9 BAD). **The v3 teacher was chosen after looking at gold v1, so its v1 numbers are optimistic.**
+
+| score (BAD = positive class) | AUC | AP (BAD) | recall BAD @ 5% FPR | recall BAD @ 10% FPR |
+|---|---|---|---|---|
+| v3 teacher (HADM + Gemma + det conf)\* | 0.79 [0.66–0.91] | 0.35 [0.15–0.64] | 0.23 [0.00–0.70] | 0.34 [0.10–0.80] |
+| v2 teacher (Gemma + det conf + CLIP zero-shot) | 0.67 [0.46–0.86] | 0.37 [0.11–0.68] | 0.34 [0.00–0.70] | 0.34 [0.10–0.70] |
+| **CLIP-L/14 student, v3 silver labels**\* | 0.67 [0.44–0.85] | 0.28 [0.10–0.57] | 0.35 [0.00–0.60] | 0.35 [0.00–0.70] |
+| CLIP-L/14 student, v2 silver labels | 0.66 [0.44–0.85] | 0.21 [0.10–0.50] | 0.23 [0.00–0.60] | 0.34 [0.00–0.70] |
+| DINOv2-base student, v3 / v2 | 0.56 / 0.51 | 0.11 / 0.11 | 0.11 / 0.11 | 0.11 / 0.11 |
+
+\* optimistic on gold v1, see above.
+
+- **The student does not inherit the teacher's gain.** Its AUC moves from 0.664 to 0.669. With frozen CLIP-L features and a
+  linear head, it can't see what HADM sees: #20, #38 and #147 stay in the "clean" half for the student, but HADM flags them.
+  Getting there needs a fine-tuned backbone on higher-resolution crops, or running HADM at inference time.
+- **Calibration.** Platt scaling on gold v1, evaluated leave-one-out, brings ECE from 0.37 to 0.01. The fitted values (`a=0.420`, `b=2.400`) are in `models/calibration.json`.
+- **Gold v2 is prepared** in `autolabel_data/gold_check_v2/`: 100 new crops on 4 sheets. 60 come from the lowest 10% of the v3 teacher, 32 are stratified
+  over the rest, and 8 are gate-rejected crops. It was sampled before the v3 students were trained, and they never train on it, so it is an honest test of the v3 teacher and students.
+  `07_ingest_eval.py --gold-dir gold_check_v2` evaluates v2 alone. `--gold-dir gold_check,gold_check_v2` pools both rounds, rescaling each round's weights to its own sample size.
 
 **Bottom line.** The pipeline is a useful *triage* tool: sort crops, and at a 10% false-alarm rate about a third of broken hands
 are caught. It is not yet an automatic QC gate. Next steps: (1) a stronger or ensembled teacher on upscaled crops, for example a

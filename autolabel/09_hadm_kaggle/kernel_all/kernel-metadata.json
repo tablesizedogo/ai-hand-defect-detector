@@ -1,0 +1,15 @@
+{
+  "id": "artem4767/hand-defects-hadm-all",
+  "title": "hand-defects-hadm-all",
+  "code_file": "hadm_all_infer.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": ["artem4767/hand-defects-hadm-all-input"],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

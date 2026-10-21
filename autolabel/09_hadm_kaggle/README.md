@@ -48,7 +48,11 @@ kaggle kernels output artem4767/hand-defects-hadm-gold -p ../autolabel_data/hadm
 
 Results: `autolabel_data/gold_check/eval_hadm.md`, summary in the main README ("HADM-L").
 
-## Scoring all 5,604 crops (prepared idea, not run)
+## Scoring all 5,604 crops (done 2026-10-21, see AUTO_LABEL_RUN.md)
+
+`01_build_input.py --all` → private dataset `artem4767/hand-defects-hadm-all-input`; `kernel_all/` (2 shards on 2×T4, 34.5 min session); `04_crop_scores.py` → `autolabel_data/hadm_hand.jsonl`.
+
+Original estimate:
 
 The 5,604 crops come from 2,500 source images. At 1.61 s/image that is ~67 min of T4 inference plus ~2 min setup, or ~35 min
 if the two T4s each take half. A full-set kernel would be `kernel_gold` with a different input dataset. Gold-set verdict: HADM-L

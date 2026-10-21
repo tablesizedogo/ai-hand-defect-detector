@@ -3,7 +3,7 @@
 * Uses only crops with is_hand == True (VLM gate). --allow-partial lets it run before the VLM job finishes
   (then only VLM-done crops are used).
 * Silver BAD = bottom --bad-q (default 15%) of teacher_ok, silver OK = top --ok-q (default 50%); the middle is discarded.
-* Crops in the gold-check set (autolabel_data/gold_check/manifest.json) and the 40 study crops are never used for training.
+* Crops in the gold-check sets (autolabel_data/gold_check/ and gold_check_v2/ manifest.json) and the 40 study crops are never used for training.
 * Student: logistic regression (default) or small MLP on L2-normalised embeddings; 5-fold CV agreement with the silver labels;
   predictions for ALL crops -> autolabel_data/student_<emb>_<model>.jsonl; ONNX export -> models/hand_ok_<emb>_<model>.onnx
   (input: float32 [N, dim] embedding, output: probabilities [N, 2], column 1 = P(ok)).
@@ -34,6 +34,8 @@ if n_vlm < len(keys) and not (a.allow_partial or a.dry_run):
 excl = set()
 gc = D / 'gold_check/manifest.json'
 if gc.exists(): excl |= {it['key'] for it in json.load(open(gc))['items']}
+gc2 = D / 'gold_check_v2/manifest.json'  # second gold round: also never trained on
+if gc2.exists(): excl |= {it['key'] for it in json.load(open(gc2))['items']}
 if (R / 'auto/gold40.json').exists(): excl |= set(json.load(open(R / 'auto/gold40.json')))
 pool = np.array([(fu[k]['is_hand'] is True or (a.dry_run and fu[k]['is_hand'] is None)) and k not in excl for k in keys])
 t = np.array([np.nan if fu[k]['teacher_ok'] is None else fu[k]['teacher_ok'] for k in keys], float)
