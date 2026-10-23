@@ -361,7 +361,7 @@ All metrics are re-weighted by the stratified sampling weights.
 - Final choice: **HADM-L is the hand-quality scorer**. Gemma is used only as the offline hand/not-hand gate (p_hand ≥ 0.95), and the CLIP-L student is kept as a light, clearly weaker fallback.
 - `autolabel/12_hadm_calibration.py` → `models/hadm_calibration.json`: Platt on pooled gold (182 hands, 17 BAD), `p_bad = sigmoid(4.108·raw − 4.039)`, LOO ECE 0.013, Brier 0.086.
 - `hand_defects/hadm_scorer.py`: Python API and CLI. Its `_hadm_backend.py`, `_geometry.py` and `_detector.py` are byte-identical copies of the node pack's files, which `tests/test_sync.py` checks.
-- `comfyui_hand_fixer/`: a separate git repository, ignored by this one. It contains the ComfyUI node pack, an API-format example workflow, 14 CPU tests (mocks plus a real HADM build with random weights plus the real YOLO), and the Kaggle E2E script.
+- `comfyui_hand_fixer/`: a separate git repository ([ComfyUI-Hand-Fixer](https://github.com/tablesizedogo/ComfyUI-Hand-Fixer)), ignored by this one. It contains the ComfyUI node pack, an API-format example workflow, 14 CPU tests (mocks plus a real HADM build with random weights plus the real YOLO), and the Kaggle E2E script.
 - E2E test: private Kaggle kernel `artem4767/hand-fixer-comfyui-e2e`, T4, 11.3 min session. Headless ComfyUI with DreamShaper 8 inpainting, HADM-L and hand_yolov8s on 5 SFW images with gold-BAD hands.
   - 5/5 workflows succeeded.
   - 3 hands were flagged, and Best-of-4 lowered P(bad) on all 3 (0.29→0.16, 0.23→0.19, 0.23→0.20).

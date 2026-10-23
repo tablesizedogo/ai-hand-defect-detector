@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from detectors import YoloHand, nms
 
 ROOT = Path(__file__).resolve().parent.parent; SRC = Path("/workspace/rag_civitai")
-MIN_BOX = 20  # px at 512-px width: smaller hands are not annotated (see LABELING_GUIDE)
+MIN_BOX = 20  # px at 512-px width: smaller hands are not annotated (see docs/LABELING_GUIDE.md)
 BAD = ["a deformed hand with extra fingers", "a mangled, malformed hand", "a hand with fused, melted fingers",
        "a distorted hand with the wrong number of fingers", "a twisted, broken-looking hand"]
 OK = ["a normal human hand with five fingers", "a well-drawn, anatomically correct hand", "a natural-looking hand",

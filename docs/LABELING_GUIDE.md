@@ -8,7 +8,7 @@ below, not your mood on the day.
 Every image comes with **pre-annotated boxes**: all of them are `hand_ok`, produced by two YOLO hand detectors.
 They are suggestions. Fix, delete, add and relabel them.
 
-![hand_ok vs hand_bad examples](docs/examples_ok_bad.jpg)
+![hand_ok vs hand_bad examples](examples_ok_bad.jpg)
 
 ## 1. Classes
 
@@ -50,7 +50,7 @@ to decide, use the "uncertain" rule in section 4.
 
 ## 4. Edge cases
 
-![edge cases](docs/examples_edge_cases.jpg)
+![edge cases](examples_edge_cases.jpg)
 
 | case | what to do |
 |---|---|

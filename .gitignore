@@ -32,3 +32,9 @@ models/*_dry.onnx
 
 # separate repository (ComfyUI node pack)
 comfyui_hand_fixer/
+# README / docs charts and figures
+!docs/img/*.png
+!docs/img/*.jpg
+!docs/experiments/img/*.png
+!docs/experiments/img/*.jpg
+readme_preview/

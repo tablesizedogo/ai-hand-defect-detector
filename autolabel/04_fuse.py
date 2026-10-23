@@ -1,7 +1,7 @@
 """Step 4: fuse per-crop signals into one teacher score + "is a hand" gate.
 
 teacher_ok = mean of rank-normalised [Gemma p_ok, detector confidence, CLIP-B/32 zero-shot p_ok]
-             (equal weights: rank-avg of these three gave AUC 0.93 / 0.89 on the 40-crop study, see AUTO_LABEL_FEASIBILITY.md;
+             (equal weights: rank-avg of these three gave AUC 0.93 / 0.89 on the 40-crop study, see docs/AUTO_LABEL_FEASIBILITY.md;
               a logistic fit on 35 hands would just overfit). Crops without a VLM answer yet use the mean of the available ranks
               and are flagged vlm_done=False.
 is_hand    = Gemma p_hand >= HAND_THR (default 0.95 since the gold check; originally 0.5, i.e. normalised P(None) < 0.5). In the study: non-hands 0.89-1.0 P(None), hands <= 0.04

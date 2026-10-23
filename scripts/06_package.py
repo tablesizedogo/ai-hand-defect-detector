@@ -93,8 +93,8 @@ with zipfile.ZipFile(PKG / "yolo/cvat_yolo_import.zip", "w", zipfile.ZIP_DEFLATE
 with open(PKG / "meta/images.jsonl", "w") as f:
     for r in rows:
         f.write(json.dumps({k: r[k] for k in ["id", "family", "baseModel", "style", "user", "page_url", "W", "H", "boxes"]}) + "\n")
-for p in ["LABELING_GUIDE.md"]:
-    shutil.copy2(ROOT / p, PKG / p)
+for p in ["LABELING_GUIDE.md"]:  # lives in docs/; the package keeps its images under docs/
+    (PKG / p).write_text((ROOT / "docs" / p).read_text().replace("](examples_", "](docs/examples_"))
 shutil.copy2(ROOT / "docs/LABELING_QUICKSTART.md", PKG / "README.md")
 (PKG / "docs").mkdir(exist_ok=True)
 for p in (ROOT / "docs").glob("*.jpg"): shutil.copy2(p, PKG / "docs" / p.name)

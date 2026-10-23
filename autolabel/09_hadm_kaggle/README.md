@@ -48,7 +48,7 @@ kaggle kernels output artem4767/hand-defects-hadm-gold -p ../autolabel_data/hadm
 
 Results: `autolabel_data/gold_check/eval_hadm.md`, summary in the main README ("HADM-L").
 
-## Scoring all 5,604 crops (done 2026-10-21, see AUTO_LABEL_RUN.md)
+## Scoring all 5,604 crops (done 2026-10-21, see docs/AUTO_LABEL_RUN.md)
 
 `01_build_input.py --all` → private dataset `artem4767/hand-defects-hadm-all-input`; `kernel_all/` (2 shards on 2×T4, 34.5 min session); `04_crop_scores.py` → `autolabel_data/hadm_hand.jsonl`.
 
