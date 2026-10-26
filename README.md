@@ -5,7 +5,8 @@ hands in generated images without hand-labelling thousands of boxes, and fixes t
 
 - **What ships:** a Python/CLI hand scorer built on the HADM-L artifact detector, and a ComfyUI node pack that masks
   suspicious hands and keeps the best of N inpainting attempts.
-- **How well it works:** AUC 0.76 on a held-out round of human-labelled Civitai hands, 0.72 on both rounds pooled.
+- **How well it works:** on 182 human-labelled Civitai hands (17 of them broken) it scores AUC 0.72 and AP 0.33;
+  a random guess would get an AP of about 0.10. On the held-out second labelling round alone, AUC was 0.76.
   At a 10% false-alarm rate it catches 28–37% of broken hands. It is a triage tool, not a finished QC gate.
 - **What was explored:** an automatic-labelling pipeline (VLM teacher, silver labels, small student) and, after
   release, a CLIP fine-tune on public datasets. Neither beat the off-the-shelf detector on Civitai images.
